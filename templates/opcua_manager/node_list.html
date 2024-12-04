@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>OPC UA节点管理</h2>
+        <div>
+            <button id="addNodeBtn" class="btn btn-primary">
+                <i class="bi bi-plus"></i> 添加节点
+            </button>
+            <a href="{% url 'server-start' %}" class="btn btn-success">
+                <i class="bi bi-play-fill"></i> 启动服务器
+            </a>
+            <a href="{% url 'server-stop' %}" class="btn btn-danger">
+                <i class="bi bi-stop-fill"></i> 停止服务器
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-hover" id="nodeTable">
+                <thead>
+                    <tr>
+                        <th>名称</th>
+                        <th>类型</th>
+                        <th>数据类型</th>
+                        <th>节点ID</th>
+                        <th>值</th>
+                        <th>描述</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for node in nodes %}
+                    <tr data-id="{{ node.id }}" data-type="{{ node.node_type }}" data-datatype="{{ node.data_type }}">
+                        <td>{{ node.name }}</td>
+                        <td>{{ node.get_node_type_display }}</td>
+                        <td>{{ node.get_data_type_display }}</td>
+                        <td>{{ node.node_id }}</td>
+                        <td>{{ node.value|default:"-" }}</td>
+                        <td>{{ node.description|default:"-" }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-info edit-btn">
+                                <i class="bi bi-pencil"></i> 编辑
+                            </button>
+                            <button class="btn btn-sm btn-danger delete-btn">
+                                <i class="bi bi-trash"></i> 删除
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center">暂无节点数据</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 节点编辑模态框 -->
+<div class="modal fade" id="nodeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">节点信息</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="nodeForm">
+                    <input type="hidden" id="nodeId">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">节点名称</label>
+                        <input type="text" class="form-control" id="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nodeType" class="form-label">节点类型</label>
+                        <select class="form-control" id="nodeType" required>
+                            <option value="variable">变量</option>
+                            <option value="object">对象</option>
+                            <option value="method">方法</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="dataTypeField">
+                        <label for="dataType" class="form-label">数据类型</label>
+                        <select class="form-control" id="dataType">
+                            <option value="double">双精度浮点数(Double)</option>
+                            <option value="float">单精度浮点数(Float)</option>
+                            <option value="int32">32位整数(Int32)</option>
+                            <option value="int64">64位整数(Int64)</option>
+                            <option value="uint16">无符号16位整数(UInt16)</option>
+                            <option value="uint32">无符号32位整数(UInt32)</option>
+                            <option value="uint64">无符号64位整数(UInt64)</option>
+                            <option value="boolean">布尔值(Boolean)</option>
+                            <option value="string">字符串(String)</option>
+                            <option value="datetime">日期时间(DateTime)</option>
+                            <option value="bytestring">字节串(ByteString)</option>
+                            <option value="array">数组(Array)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nodeIdentifier" class="form-label">节点ID</label>
+                        <input type="text" class="form-control" id="nodeIdentifier" required>
+                        <small class="form-text text-muted">格式示例: ns=1;i=1000</small>
+                    </div>
+                    <div class="mb-3" id="valueField">
+                        <label for="value" class="form-label">值</label>
+                        <input type="text" class="form-control" id="value">
+                        <small class="form-text text-muted" id="valueHint">请根据选择的数据类型输入相应格式的值</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">描述</label>
+                        <textarea class="form-control" id="description" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="saveNode">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = new bootstrap.Modal(document.getElementById('nodeModal'));
+    const nodeForm = document.getElementById('nodeForm');
+    const saveBtn = document.getElementById('saveNode');
+    const nodeTypeSelect = document.getElementById('nodeType');
+    const dataTypeSelect = document.getElementById('dataType');
+    const valueField = document.getElementById('valueField');
+    const dataTypeField = document.getElementById('dataTypeField');
+    const nodeIdentifierField = document.getElementById('nodeIdentifier');
+    const valueHint = document.getElementById('valueHint');
+    let currentNodeId = null;
+    let isEditMode = false;
+
+    // 更新值字段提示
+    function updateValueHint() {
+        const dataType = dataTypeSelect.value;
+        let hint = '请输入';
+        switch(dataType) {
+            case 'double':
+            case 'float':
+                hint += '数字（可包含小数点）';
+                break;
+            case 'int32':
+            case 'int64':
+                hint += '整数';
+                break;
+            case 'uint16':
+                hint += '0-65535之间的正整数';
+                break;
+            case 'uint32':
+            case 'uint64':
+                hint += '正整数';
+                break;
+            case 'boolean':
+                hint += 'true/false、1/0、yes/no';
+                break;
+            case 'datetime':
+                hint += '日期时间（格式：YYYY-MM-DD HH:mm:ss）';
+                break;
+            case 'string':
+                hint += '文本';
+                break;
+            case 'bytestring':
+                hint += '十六进制字符串';
+                break;
+            case 'array':
+                hint += 'Int16类型的数组，例如：[1, 2, 3] 或 [1,2,3]。数组中的值必须在-32768到32767之间，支持空格分隔';
+                break;
+        }
+        valueHint.textContent = hint;
+    }
+
+    // 数据类型变化时更新提示
+    dataTypeSelect.addEventListener('change', updateValueHint);
+
+    // 节点类型变化时控制字段显示
+    nodeTypeSelect.addEventListener('change', function() {
+        const isVariable = this.value === 'variable';
+        valueField.style.display = isVariable ? 'block' : 'none';
+        dataTypeField.style.display = isVariable ? 'block' : 'none';
+        if (isVariable) {
+            document.getElementById('value').required = true;
+            updateValueHint();
+        } else {
+            document.getElementById('value').required = false;
+            document.getElementById('value').value = '';
+        }
+    });
+
+    // 添加节点按钮点击事件
+    document.getElementById('addNodeBtn').addEventListener('click', function() {
+        isEditMode = false;
+        currentNodeId = null;
+        nodeForm.reset();
+        document.getElementById('nodeId').value = '';
+        nodeTypeSelect.disabled = false;
+        nodeIdentifierField.disabled = false;
+        dataTypeSelect.disabled = false;
+        valueField.style.display = 'block';
+        dataTypeField.style.display = 'block';
+        updateValueHint();
+        document.querySelector('.modal-title').textContent = '添加节点';
+        modal.show();
+    });
+
+    // 格式化数组显示
+    function formatArrayValue(value) {
+        try {
+            const arrayData = JSON.parse(value);
+            return `[${arrayData.join(', ')}]`;
+        } catch (e) {
+            console.error('解析数组值失败:', e);
+            return value;
+        }
+    }
+
+    // 更新表格中的数组显示
+    function updateArrayDisplay() {
+        document.querySelectorAll('tr[data-datatype="array"] td:nth-child(5)').forEach(cell => {
+            if (cell.textContent !== '-') {
+                cell.textContent = formatArrayValue(cell.textContent);
+            }
+        });
+    }
+
+    // 编辑按钮点击事件
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            isEditMode = true;
+            const row = this.closest('tr');
+            currentNodeId = row.dataset.id;
+            const nodeType = row.dataset.type;
+            const dataType = row.dataset.datatype;
+            
+            // 填充表单
+            document.getElementById('nodeId').value = currentNodeId;
+            document.getElementById('name').value = row.cells[0].textContent;
+            document.getElementById('nodeType').value = nodeType;
+            document.getElementById('dataType').value = dataType;
+            document.getElementById('nodeIdentifier').value = row.cells[3].textContent;
+            
+            // 处理值的显示
+            let value = row.cells[4].textContent;
+            if (value !== '-') {
+                if (dataType === 'array') {
+                    value = formatArrayValue(value);
+                }
+                document.getElementById('value').value = value;
+            } else {
+                document.getElementById('value').value = '';
+            }
+            
+            document.getElementById('description').value = row.cells[5].textContent !== '-' ? row.cells[5].textContent : '';
+            
+            // 在编辑模式下禁用某些字段
+            nodeTypeSelect.disabled = true;
+            nodeIdentifierField.disabled = true;
+            dataTypeSelect.disabled = true;
+            
+            // 控制字段显示
+            const isVariable = nodeType === 'variable';
+            valueField.style.display = isVariable ? 'block' : 'none';
+            dataTypeField.style.display = isVariable ? 'block' : 'none';
+            updateValueHint();
+            
+            document.querySelector('.modal-title').textContent = '编辑节点';
+            modal.show();
+        });
+    });
+
+    // 删除按钮点击事件
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm('确定要删除这个节点吗？')) {
+                const row = this.closest('tr');
+                const nodeId = row.dataset.id;
+                deleteNode(nodeId);
+            }
+        });
+    });
+
+    // 保存节点
+    saveBtn.addEventListener('click', function() {
+        const formData = {
+            name: document.getElementById('name').value,
+            node_type: document.getElementById('nodeType').value,
+            node_id: document.getElementById('nodeIdentifier').value,
+            data_type: document.getElementById('dataType').value,
+            description: document.getElementById('description').value
+        };
+
+        // 获取值并处理
+        const value = document.getElementById('value').value;
+        if (formData.data_type === 'array' && value) {
+            try {
+                // 尝试解析数组值
+                const cleanedValue = value.trim()
+                    .replace(/\s*,\s*/g, ',')  // 处理逗号周围的空格
+                    .replace(/\[\s+/g, '[')    // 处理左括号后的空格
+                    .replace(/\s+\]/g, ']');   // 处理右括号前的空格
+                JSON.parse(cleanedValue);  // 验证是否为有效的JSON
+                formData.value = cleanedValue;
+            } catch (e) {
+                alert('数组格式无效，请使用正确的格式，例如：[1, 2, 3]');
+                return;
+            }
+        } else {
+            formData.value = value;
+        }
+
+        // 验证必填字段
+        if (!formData.name || !formData.node_id) {
+            alert('请填写必填字段');
+            return;
+        }
+
+        // 验证变量类型必须提供值
+        if (formData.node_type === 'variable' && !formData.value) {
+            alert('变量类型节点必须提供值');
+            return;
+        }
+
+        if (isEditMode) {
+            updateNode(currentNodeId, formData);
+        } else {
+            createNode(formData);
+        }
+    });
+
+    // API 调用函数
+    function createNode(data) {
+        fetch('/node/add/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                modal.hide();
+                location.reload();
+            } else {
+                alert('创建失败: ' + data.error);
+            }
+        });
+    }
+
+    function updateNode(id, data) {
+        fetch(`/node/${id}/edit/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                modal.hide();
+                location.reload();
+            } else {
+                alert('更新失败: ' + data.error);
+            }
+        });
+    }
+
+    function deleteNode(id) {
+        fetch(`/node/${id}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('删除失败: ' + data.error);
+            }
+        });
+    }
+
+    // 获取CSRF Token
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // 初始化提示
+    updateValueHint();
+
+    // 初始化页面时更新数组显示
+    updateArrayDisplay();
+});
+</script>
+{% endblock %} 
