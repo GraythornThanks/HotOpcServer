@@ -47,7 +47,10 @@ def node_list(request):
                     'variation_min': node.variation_min,
                     'variation_max': node.variation_max,
                     'variation_step': node.variation_step,
-                    'variation_values': node.variation_values
+                    'variation_values': node.variation_values,
+                    'variation_direction': node.variation_direction,
+                    'variation_cycle': node.variation_cycle,
+                    'decimal_places': node.decimal_places
                 })
         else:
             # 服务器运行中，尝试获取实时值
@@ -57,7 +60,7 @@ def node_list(request):
                 if node.node_type == 'variable':
                     try:
                         ua_node = server.get_node(ua.NodeId.from_string(node.node_id))
-                        if ua_node and ua_node.get_browse_name():  # 确保节点存在且有效
+                        if ua_node and ua_node.get_browse_name():  # 确保节点存在且���效
                             current_value = str(ua_node.get_value())
                             # 更新数据库中的值
                             if current_value != node.value:
@@ -81,7 +84,10 @@ def node_list(request):
                     'variation_min': node.variation_min,
                     'variation_max': node.variation_max,
                     'variation_step': node.variation_step,
-                    'variation_values': node.variation_values
+                    'variation_values': node.variation_values,
+                    'variation_direction': node.variation_direction,
+                    'variation_cycle': node.variation_cycle,
+                    'decimal_places': node.decimal_places
                 })
         
         return JsonResponse({
@@ -248,6 +254,12 @@ def edit_node(request, node_id):
                 logger.info(f"Updating variation type to: {variation_type}")
                 node.variation_type = variation_type
                 node.variation_interval = int(data.get('variation_interval', 1000))
+                
+                # 处理小数位数设置
+                decimal_places = data.get('decimal_places')
+                if decimal_places is not None:
+                    decimal_places = max(0, min(10, int(decimal_places)))  # 限制在0-10之间
+                    node.decimal_places = decimal_places
                 
                 if variation_type in ['random', 'linear', 'cycle']:
                     try:

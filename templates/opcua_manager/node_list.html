@@ -396,7 +396,7 @@
                                     <th>节点类型</th>
                                     <th>数据类型</th>
                                     <th>节点ID</th>
-                                    <th>���</th>
+                                    <th></th>
                                     <th>描述</th>
                                     <th>操作</th>
                                 </tr>
@@ -569,6 +569,14 @@
                                        v-model="currentNode.variation_interval" min="100">
                                 <small class="form-text text-muted">最少100毫秒</small>
                             </div>
+
+                            <!-- 小数位数设置 -->
+                            <div class="mb-3" v-if="currentNode.data_type === 'double' || currentNode.data_type === 'float'">
+                                <label for="decimalPlaces" class="form-label">小数位数</label>
+                                <input type="number" class="form-control" id="decimalPlaces" 
+                                       v-model="currentNode.decimal_places" min="0" max="10">
+                                <small class="form-text text-muted">设置数值显示的小数位数（0-10位）</small>
+                            </div>
                         </template>
 
                         <!-- 规则预设 -->
@@ -646,7 +654,21 @@ const app = createApp({
     data() {
         return {
             nodes: [],
-            currentNode: this.getEmptyNode(),
+            currentNode: {
+                name: '',
+                node_type: 'variable',
+                node_id: '',
+                data_type: 'double',
+                value: '',
+                description: '',
+                variation_type: 'none',
+                variation_interval: 1000,
+                variation_min: null,
+                variation_max: null,
+                variation_step: null,
+                variation_values: '',
+                decimal_places: 2
+            },
             isEditMode: false,
             modal: null,
             refreshInterval: null,
@@ -681,7 +703,7 @@ const app = createApp({
             ],
             rulePresets: {
                 temperature: {
-                    name: '温度',
+                    name: '度',
                     icon: 'bi bi-thermometer-half',
                     type: 'linear',
                     min: 20,
@@ -866,7 +888,7 @@ const app = createApp({
                 return false;
             }
             
-            // 如果是新建节点，检查节点ID格���
+            // 如果是新建节点，检查节点ID格
             if (!this.isEditMode && this.nodeIdError) {
                 return false;
             }
@@ -917,7 +939,7 @@ const app = createApp({
                 if (data.success) {
                     this.nodes = data.nodes
                 } else {
-                    alert('加载节点失败: ' + data.error)
+                    alert('加载节点失��: ' + data.error)
                 }
             } catch (error) {
                 console.error('Error loading nodes:', error)
@@ -947,11 +969,23 @@ const app = createApp({
             this.modal.show()
         },
         async saveNode() {
-            // 保存前再次验证
-            this.validateValue();
-            if (!this.isFormValid) {
-                return;
-            }
+            if (!this.validateForm()) return;
+            
+            const nodeData = {
+                name: this.currentNode.name,
+                node_type: this.currentNode.node_type,
+                node_id: this.currentNode.node_id,
+                data_type: this.currentNode.data_type,
+                value: this.currentNode.value,
+                description: this.currentNode.description,
+                variation_type: this.currentNode.variation_type,
+                variation_interval: this.currentNode.variation_interval,
+                variation_min: this.currentNode.variation_min,
+                variation_max: this.currentNode.variation_max,
+                variation_step: this.currentNode.variation_step,
+                variation_values: this.currentNode.variation_values,
+                decimal_places: this.currentNode.decimal_places
+            };
             
             try {
                 // 如果是添加新节点，先检查节点ID
@@ -969,7 +1003,7 @@ const app = createApp({
                         'Content-Type': 'application/json',
                         'X-CSRFToken': this.getCsrfToken()
                     },
-                    body: JSON.stringify(this.currentNode)
+                    body: JSON.stringify(nodeData)
                 });
                 const data = await response.json();
                 if (data.success) {
@@ -1115,7 +1149,7 @@ const app = createApp({
                         
                         this.needsRestart = false;
                         await this.loadNodes();
-                        this.showSuccess('服务器已重启完成');
+                        this.showSuccess('服器已重启完成');
                     } catch (error) {
                         console.error('Error restarting server:', error);
                         this.showError('重启服务器失败');
@@ -1152,7 +1186,7 @@ const app = createApp({
         validateNodeId(nodeId) {
             if (!nodeId) return false;
             
-            // ���本格式检查：必须包含命名空间
+            // 本格式检查：必须包含命名空间
             if (!nodeId.startsWith('ns=')) {
                 return false;
             }
@@ -1188,7 +1222,7 @@ const app = createApp({
                 return guidPattern.test(idPart);
             }
             
-            // ��进制标识符：b=SGVsbG8gV29ybGQ=
+            // 进制标识符：b=SGVsbG8gV29ybGQ=
             if (idPart.startsWith('b=')) {
                 const base64Pattern = /^b=[A-Za-z0-9+/]+=*$/;
                 return base64Pattern.test(idPart);
@@ -1223,7 +1257,7 @@ const app = createApp({
             
             // 如果是变量节点，验证数据类型
             if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
-                this.formErrors.value = '请选择数据类型';
+                this.formErrors.value = '请择数据类型';
                 isValid = false;
             }
             

@@ -67,7 +67,7 @@ class OpcUaServer:
                             logger.info(f"Creating node: {node.node_id} ({node.name})")
                             
                             if node.node_type == 'variable':
-                                # 创建变量节点
+                                # 创建��量节点
                                 initial_value = self._convert_value(node.value, node.data_type)
                                 var = self.objects.add_variable(
                                     node_id,
@@ -285,7 +285,7 @@ class OpcUaServer:
                 )
                 
                 if not nodes.exists():
-                    time.sleep(1.0)  # 如果没有需要变化的节点，等待1秒
+                    time.sleep(1.0)  # 如果没有需要变化的节���，等待1秒
                     continue
                 
                 # 获取最小间隔时间
@@ -302,14 +302,14 @@ class OpcUaServer:
                         # 根据变化类型计算新值
                         if node.variation_type == 'random':
                             if node.variation_min is not None and node.variation_max is not None:
-                                new_value = random.uniform(node.variation_min, node.variation_max)
+                                new_value = round(random.uniform(node.variation_min, node.variation_max), node.decimal_places)
                             else:
                                 continue
                         
                         elif node.variation_type == 'linear':
                             if all(x is not None for x in [node.variation_min, node.variation_max, node.variation_step]):
                                 current_value = float(current_value)
-                                new_value = current_value + node.variation_step
+                                new_value = round(current_value + node.variation_step, node.decimal_places)
                                 if new_value > node.variation_max:
                                     new_value = node.variation_min
                                 elif new_value < node.variation_min:
@@ -320,7 +320,7 @@ class OpcUaServer:
                         elif node.variation_type == 'cycle':
                             if all(x is not None for x in [node.variation_min, node.variation_max, node.variation_step]):
                                 current_value = float(current_value)
-                                new_value = current_value + node.variation_step
+                                new_value = round(current_value + node.variation_step, node.decimal_places)
                                 if new_value > node.variation_max:
                                     new_value = node.variation_max
                                     node.variation_step = -abs(node.variation_step)
@@ -342,7 +342,7 @@ class OpcUaServer:
                             except (ValueError, IndexError):
                                 continue
                         
-                        # 更新OPC UA节点值
+                        # 更���OPC UA节点值
                         try:
                             ua_node = self.get_node(ua.NodeId.from_string(node.node_id))
                             if ua_node:

@@ -49,6 +49,7 @@ class OpcNode(models.Model):
     variation_values = models.TextField(null=True, blank=True, verbose_name='离散值集合')
     variation_direction = models.IntegerField(default=1, verbose_name='变化方向')  # 1表示增加，-1表示减少
     variation_cycle = models.BooleanField(default=False, verbose_name='是否循环')
+    decimal_places = models.IntegerField(default=2, verbose_name='小数位数')
 
     class Meta:
         verbose_name = 'OPC UA节点'
