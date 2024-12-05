@@ -50,8 +50,30 @@ class OpcUaServer:
             self.stop_variation = False
             self.nodes.clear()  # 清除旧的节点缓存
             
-            # 重建所有节点
-            self._rebuild_nodes()
+            # 从数据库重建所有节点
+            from .models import OpcNode
+            nodes = OpcNode.objects.all()
+            for node in nodes:
+                try:
+                    node_id = ua.NodeId.from_string(node.node_id)
+                    if node.node_type == 'variable':
+                        # 创建变量节点
+                        initial_value = convert_value(node.value, node.data_type) if node.value else 0
+                        var = self.objects.add_variable(
+                            node_id,
+                            node.name,
+                            initial_value,
+                            varianttype=get_ua_data_type(node.data_type)
+                        )
+                        var.set_writable()
+                        self.nodes[str(node_id)] = var
+                    else:
+                        # 创建对象节点
+                        obj = self.objects.add_object(node_id, node.name)
+                        self.nodes[str(node_id)] = obj
+                    logger.info(f"Rebuilt node from database: {node.node_id}")
+                except Exception as e:
+                    logger.error(f"Failed to rebuild node {node.node_id}: {str(e)}")
             
             # 启动变化值线程
             self.variation_thread = threading.Thread(target=self._variation_loop)

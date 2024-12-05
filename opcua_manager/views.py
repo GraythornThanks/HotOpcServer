@@ -106,37 +106,7 @@ def add_node(request):
         logger.info(f"Adding node with data: {data}")
         
         with transaction.atomic():
-            # 首先在OPC UA服务器中创建节点
-            server = OpcUaServer()
-            node_id = ua.NodeId.from_string(data['node_id'])
-            
-            # 准备初始值
-            if data['node_type'] == 'variable':
-                initial_value = convert_value(data.get('value', 0), data.get('data_type', 'double'))
-                if initial_value is None:
-                    initial_value = 0  # 默认值
-                
-                # 在OPC UA服务器中创建变量节点
-                try:
-                    var = server.add_variable(
-                        node_id,
-                        data['name'],
-                        initial_value,
-                        varianttype=get_ua_data_type(data.get('data_type', 'double'))
-                    )
-                    var.set_writable()  # 设置为可写
-                except Exception as e:
-                    logger.error(f'Failed to create OPC UA variable node: {str(e)}')
-                    raise Exception(f'创建OPC UA变量节点失败: {str(e)}')
-            else:
-                # 创建对象节点
-                try:
-                    server.add_object(node_id, data['name'])
-                except Exception as e:
-                    logger.error(f'Failed to create OPC UA object node: {str(e)}')
-                    raise Exception(f'创建OPC UA对象节点失败: {str(e)}')
-            
-            # 然后创建数据库记录
+            # 只在数据库中创建节点记录
             node = OpcNode.objects.create(
                 name=data['name'],
                 node_type=data['node_type'],
@@ -178,6 +148,95 @@ def add_node(request):
         })
 
 @csrf_exempt
+def edit_node(request, node_id):
+    """编辑节点"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': '不支持的请求方法'})
+    
+    try:
+        data = json.loads(request.body)
+        logger.info(f"Editing node {node_id} with data: {data}")
+        
+        with transaction.atomic():
+            node = get_object_or_404(OpcNode, id=node_id)
+            
+            # 更新基本信息
+            node.name = data.get('name', node.name)
+            node.description = data.get('description', node.description)
+            
+            # 更新变化配置
+            variation_type = data.get('variation_type')
+            if variation_type is not None:
+                logger.info(f"Updating variation type to: {variation_type}")
+                node.variation_type = variation_type
+                node.variation_interval = int(data.get('variation_interval', 1000))
+                
+                if variation_type in ['random', 'linear', 'cycle']:
+                    try:
+                        if 'variation_min' in data:
+                            node.variation_min = float(data['variation_min'])
+                        if 'variation_max' in data:
+                            node.variation_max = float(data['variation_max'])
+                        if variation_type in ['linear', 'cycle'] and 'variation_step' in data:
+                            node.variation_step = float(data['variation_step'])
+                    except (TypeError, ValueError) as e:
+                        raise ValueError(f'变化配置参数无效: {str(e)}')
+                elif variation_type == 'discrete':
+                    if 'variation_values' in data:
+                        try:
+                            values = json.loads(data['variation_values'])
+                            if not isinstance(values, list):
+                                raise ValueError('离散值必须是数组格式')
+                            node.variation_values = data['variation_values']
+                        except json.JSONDecodeError:
+                            raise ValueError('离散值必须是有效的JSON数组格式')
+                elif variation_type == 'none':
+                    node.variation_min = None
+                    node.variation_max = None
+                    node.variation_step = None
+                    node.variation_values = None
+            
+            # 处理节点值
+            value = data.get('value')
+            if node.node_type == 'variable' and value is not None:
+                try:
+                    typed_value = convert_value(value, node.data_type)
+                    if typed_value is None:
+                        raise ValueError('无效的值格式')
+                    node.value = value
+                except ValueError as e:
+                    raise ValueError(f'值格式错误: {str(e)}')
+            
+            # 保存所有更改
+            node.save()
+            logger.info(f"Node {node_id} updated successfully with variation_type: {node.variation_type}")
+            
+            return JsonResponse({
+                'success': True,
+                'data': {
+                    'id': node.id,
+                    'name': node.name,
+                    'node_type': node.node_type,
+                    'node_id': node.node_id,
+                    'data_type': node.data_type,
+                    'value': node.value,
+                    'description': node.description,
+                    'variation_type': node.variation_type,
+                    'variation_interval': node.variation_interval,
+                    'variation_min': node.variation_min,
+                    'variation_max': node.variation_max,
+                    'variation_step': node.variation_step,
+                    'variation_values': node.variation_values
+                }
+            })
+    except Exception as e:
+        logger.error(f'Error updating node {node_id}: {str(e)}')
+        return JsonResponse({
+            'success': False,
+            'error': f'更新失败: {str(e)}'
+        })
+
+@csrf_exempt
 def delete_node(request, node_id):
     """删除节点"""
     if request.method != 'POST':
@@ -185,7 +244,9 @@ def delete_node(request, node_id):
     
     try:
         node = get_object_or_404(OpcNode, id=node_id)
+        # 只在数据库中删除节点
         node.delete()
+        logger.info(f'Successfully deleted node {node_id} from database')
         return JsonResponse({'success': True})
     except Exception as e:
         logger.error(f'Error deleting node {node_id}: {str(e)}')
@@ -261,133 +322,3 @@ def stop_server(request):
     except Exception as e:
         messages.error(request, f'停止服务器失败: {str(e)}')
     return redirect('node-list')
-
-@csrf_exempt
-def edit_node(request, node_id):
-    """编辑节点"""
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': '不支持的请求方法'})
-    
-    try:
-        data = json.loads(request.body)
-        logger.info(f"Editing node {node_id} with data: {data}")
-        
-        with transaction.atomic():
-            node = get_object_or_404(OpcNode, id=node_id)
-            server = OpcUaServer()
-            
-            # 获取OPC UA节点
-            try:
-                ua_node = server.get_node(ua.NodeId.from_string(node.node_id))
-                if not ua_node:
-                    # 如果节点不存在，尝试创建
-                    if node.node_type == 'variable':
-                        ua_node = server.add_variable(
-                            ua.NodeId.from_string(node.node_id),
-                            node.name,
-                            0,  # 默认值
-                            varianttype=get_ua_data_type(node.data_type)
-                        )
-                        ua_node.set_writable()
-                    else:
-                        ua_node = server.add_object(ua.NodeId.from_string(node.node_id), node.name)
-            except Exception as e:
-                logger.error(f'Failed to get or create OPC UA node: {str(e)}')
-                raise Exception(f'获取或创建OPC UA节点失败: {str(e)}')
-            
-            # 更新基本信息
-            node.name = data.get('name', node.name)
-            node.description = data.get('description', node.description)
-            
-            # 更新变化配置
-            variation_type = data.get('variation_type')
-            if variation_type is not None:  # 只有当前端明确发送了variation_type时才更新
-                logger.info(f"Updating variation type to: {variation_type}")
-                node.variation_type = variation_type
-                node.variation_interval = int(data.get('variation_interval', 1000))
-                
-                # 根据变化类型设置相应的配置
-                if variation_type in ['random', 'linear', 'cycle']:
-                    try:
-                        if 'variation_min' in data:
-                            node.variation_min = float(data['variation_min'])
-                        if 'variation_max' in data:
-                            node.variation_max = float(data['variation_max'])
-                        if variation_type in ['linear', 'cycle'] and 'variation_step' in data:
-                            node.variation_step = float(data['variation_step'])
-                    except (TypeError, ValueError) as e:
-                        raise ValueError(f'变化配置参数无效: {str(e)}')
-                elif variation_type == 'discrete':
-                    if 'variation_values' in data:
-                        try:
-                            # 验证离散值是否为有效的JSON数组
-                            values = json.loads(data['variation_values'])
-                            if not isinstance(values, list):
-                                raise ValueError('离散值必须是数组格式')
-                            node.variation_values = data['variation_values']
-                        except json.JSONDecodeError:
-                            raise ValueError('离散值必须是有效的JSON数组格式')
-                elif variation_type == 'none':
-                    # 清除变化配置
-                    node.variation_min = None
-                    node.variation_max = None
-                    node.variation_step = None
-                    node.variation_values = None
-            
-            # 处理节点值
-            value = data.get('value')
-            if node.node_type == 'variable' and value is not None:
-                try:
-                    # 转换并验证值
-                    typed_value = convert_value(value, node.data_type)
-                    if typed_value is None:
-                        raise ValueError('无效的值格式')
-                    
-                    # 更新OPC UA服务器
-                    try:
-                        if node.data_type == 'array':
-                            ua_node.set_value(typed_value)
-                        else:
-                            ua_node.set_value(typed_value, varianttype=get_ua_data_type(node.data_type))
-                    except Exception as e:
-                        logger.error(f'Failed to update OPC UA node value: {str(e)}')
-                        raise Exception(f'更新OPC UA节点值失败: {str(e)}')
-                    
-                    # OPC UA更新成功后，更新值
-                    node.value = value
-                    
-                except ValueError as e:
-                    raise ValueError(f'值格式错误: {str(e)}')
-            
-            # 保存所有更改
-            node.save()
-            logger.info(f"Node {node_id} updated successfully with variation_type: {node.variation_type}")
-            
-            # 验证保存是否成功
-            node.refresh_from_db()
-            logger.info(f"Verified node {node_id} after save: variation_type={node.variation_type}")
-            
-            return JsonResponse({
-                'success': True,
-                'data': {
-                    'id': node.id,
-                    'name': node.name,
-                    'node_type': node.node_type,
-                    'node_id': node.node_id,
-                    'data_type': node.data_type,
-                    'value': node.value,
-                    'description': node.description,
-                    'variation_type': node.variation_type,
-                    'variation_interval': node.variation_interval,
-                    'variation_min': node.variation_min,
-                    'variation_max': node.variation_max,
-                    'variation_step': node.variation_step,
-                    'variation_values': node.variation_values
-                }
-            })
-    except Exception as e:
-        logger.error(f'Error updating node {node_id}: {str(e)}')
-        return JsonResponse({
-            'success': False,
-            'error': f'更新失败: {str(e)}'
-        })

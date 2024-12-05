@@ -9,6 +9,12 @@
     [v-cloak] {
         display: none;
     }
+    .restart-alert {
+        display: none;
+    }
+    .restart-alert.show {
+        display: block;
+    }
 </style>
 {% endblock %}
 
@@ -16,6 +22,16 @@
 {% csrf_token %}
 <div id="app" v-cloak>
     <div class="container mt-4">
+        <!-- 重启提示 -->
+        <div class="alert alert-warning restart-alert" :class="{ show: needsRestart }">
+            <i class="bi bi-exclamation-triangle"></i>
+            您已修改了节点配置，需要重启服务器才能生效。
+            <button class="btn btn-warning btn-sm ms-3" @click="restartServer" :disabled="isRestarting">
+                <i class="bi bi-arrow-clockwise"></i>
+                [[ isRestarting ? '重启中...' : '立即重启' ]]
+            </button>
+        </div>
+
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="d-flex align-items-center gap-3">
                 <h2>OPC UA节点管理</h2>
@@ -28,6 +44,10 @@
                 <a href="{% url 'server-start' %}" class="btn btn-success" :class="{ disabled: serverRunning }">
                     <i class="bi bi-play-fill"></i> 启动服务器
                 </a>
+                <button class="btn btn-warning" @click="restartServer" :disabled="isRestarting || !serverRunning">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    [[ isRestarting ? '重启中' : '重启服务器' ]]
+                </button>
                 <a href="{% url 'server-stop' %}" class="btn btn-danger" :class="{ disabled: !serverRunning }">
                     <i class="bi bi-stop-fill"></i> 停止服务器
                 </a>
@@ -215,6 +235,8 @@ const app = createApp({
             modal: null,
             refreshInterval: null,
             serverRunning: false,
+            needsRestart: false,
+            isRestarting: false,
             nodeTypes: [
                 { value: 'variable', label: '变量' },
                 { value: 'object', label: '对象' },
@@ -395,8 +417,9 @@ const app = createApp({
         },
         serverStatusClass() {
             return {
-                'badge bg-success': this.serverRunning,
-                'badge bg-danger': !this.serverRunning
+                'badge': true,
+                'bg-success': this.serverRunning,
+                'bg-danger': !this.serverRunning
             }
         }
     },
@@ -463,6 +486,7 @@ const app = createApp({
                 if (data.success) {
                     this.modal.hide()
                     await this.loadNodes()
+                    this.needsRestart = true
                 } else {
                     alert('保存失败: ' + data.error)
                 }
@@ -483,6 +507,7 @@ const app = createApp({
                     const data = await response.json()
                     if (data.success) {
                         await this.loadNodes()
+                        this.needsRestart = true
                     } else {
                         alert('删除失败: ' + data.error)
                     }
@@ -561,6 +586,39 @@ const app = createApp({
             if (this.refreshInterval) {
                 clearInterval(this.refreshInterval)
                 this.refreshInterval = null
+            }
+        },
+        async restartServer() {
+            if (!confirm('确定要重启服务器吗？这将会中断所有当前连接。')) {
+                return
+            }
+            
+            this.isRestarting = true
+            try {
+                await fetch('{% url "server-stop" %}', {
+                    method: 'GET',
+                    headers: {
+                        'X-CSRFToken': this.getCsrfToken()
+                    }
+                })
+                
+                await new Promise(resolve => setTimeout(resolve, 1000))
+                
+                await fetch('{% url "server-start" %}', {
+                    method: 'GET',
+                    headers: {
+                        'X-CSRFToken': this.getCsrfToken()
+                    }
+                })
+                
+                this.needsRestart = false
+                await this.loadNodes()
+                alert('服务器已重启完成')
+            } catch (error) {
+                console.error('Error restarting server:', error)
+                alert('重启服务器失败')
+            } finally {
+                this.isRestarting = false
             }
         }
     },
