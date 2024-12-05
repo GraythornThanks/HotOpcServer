@@ -661,30 +661,48 @@
                             <label class="form-label">节点名称模板</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" v-model="batchSettings.nameTemplate" 
-                                       placeholder="例如：tube{n}" required>
+                                       placeholder="例如：tube{n}" required
+                                       :class="{ 'is-invalid': batchErrors.nameTemplate }">
                                 <span class="input-group-text" title="使用{n}表示序号位置">?</span>
                             </div>
                             <small class="form-text text-muted">使用{n}表示序号位置，如：tube{n}</small>
+                            <div class="invalid-feedback" v-if="batchErrors.nameTemplate">
+                                [[ batchErrors.nameTemplate ]]
+                            </div>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label">节点ID模板</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" v-model="batchSettings.nodeIdTemplate" 
-                                       placeholder="例如：ns=1;s=tube{n}" required>
+                                       placeholder="例如：ns=1;s=tube{n}" required
+                                       :class="{ 'is-invalid': batchErrors.nodeIdTemplate }">
                                 <span class="input-group-text" title="使用{n}表示序号位置">?</span>
                             </div>
-                            <small class="form-text text-muted">使用{n}表示序号位置，如：ns=1;s=tube{n}</small>
+                            <small class="form-text text-muted">
+                                支持的格式：<br>
+                                - 字符串标识符：ns=1;s=tube{n}<br>
+                                - 数字标识符：ns=1;i=1000{n}<br>
+                                注意：GUID和二进制标识符不支持批量创建
+                            </small>
+                            <div class="invalid-feedback" v-if="batchErrors.nodeIdTemplate">
+                                [[ batchErrors.nodeIdTemplate ]]
+                            </div>
                         </div>
 
                         <div class="row mb-3">
                             <div class="col">
                                 <label class="form-label">起始序号</label>
-                                <input type="number" class="form-control" v-model="batchSettings.startIndex" min="1" required>
+                                <input type="number" class="form-control" v-model="batchSettings.startIndex" 
+                                       min="1" required :class="{ 'is-invalid': batchErrors.range }">
                             </div>
                             <div class="col">
                                 <label class="form-label">结束序号</label>
-                                <input type="number" class="form-control" v-model="batchSettings.endIndex" min="1" required>
+                                <input type="number" class="form-control" v-model="batchSettings.endIndex" 
+                                       min="1" required :class="{ 'is-invalid': batchErrors.range }">
+                            </div>
+                            <div class="invalid-feedback" v-if="batchErrors.range">
+                                [[ batchErrors.range ]]
                             </div>
                         </div>
 
@@ -710,8 +728,12 @@
                         <div class="mb-3" v-if="batchSettings.nodeType === 'variable'">
                             <label class="form-label">初始值模板</label>
                             <input type="text" class="form-control" v-model="batchSettings.valueTemplate" 
-                                   placeholder="例如：{n}或固定值">
+                                   placeholder="���如：{n}或固定值"
+                                   :class="{ 'is-invalid': batchErrors.value }">
                             <small class="form-text text-muted">可以使用{n}表示序号，或输入固定值</small>
+                            <div class="invalid-feedback" v-if="batchErrors.value">
+                                [[ batchErrors.value ]]
+                            </div>
                         </div>
 
                         <!-- 变化设置 -->
@@ -754,6 +776,15 @@
                         <!-- 预览 -->
                         <div class="mb-3">
                             <label class="form-label">预览</label>
+                            <div v-if="batchErrors.duplicates.length > 0" class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                以下节点ID已存在：
+                                <ul class="mb-0 mt-2">
+                                    <li v-for="nodeId in batchErrors.duplicates" :key="nodeId">
+                                        [[ nodeId ]]
+                                    </li>
+                                </ul>
+                            </div>
                             <div class="table-responsive">
                                 <table class="table table-sm">
                                     <thead>
@@ -997,6 +1028,13 @@ const app = createApp({
                 variationInterval: 1000,
                 decimalPlaces: 2
             },
+            batchErrors: {
+                nameTemplate: '',
+                nodeIdTemplate: '',
+                range: '',
+                value: '',
+                duplicates: []
+            },
             isProcessing: false,
             batchAddModal: null
         }
@@ -1091,11 +1129,17 @@ const app = createApp({
             return preview;
         },
         isBatchFormValid() {
+            // 检查是否有任何错误
             return this.batchSettings.nameTemplate && 
                    this.batchSettings.nodeIdTemplate && 
                    this.batchSettings.startIndex && 
                    this.batchSettings.endIndex &&
-                   this.batchSettings.startIndex <= this.batchSettings.endIndex;
+                   this.batchSettings.startIndex <= this.batchSettings.endIndex &&
+                   !this.batchErrors.nameTemplate &&
+                   !this.batchErrors.nodeIdTemplate &&
+                   !this.batchErrors.range &&
+                   !this.batchErrors.value &&
+                   this.batchErrors.duplicates.length === 0;
         }
     },
     methods: {
@@ -1333,7 +1377,7 @@ const app = createApp({
                         
                         this.needsRestart = false;
                         await this.loadNodes();
-                        this.showSuccess('服器已重启完成');
+                        this.showSuccess('服务器已重启完成');
                     } catch (error) {
                         console.error('Error restarting server:', error);
                         this.showError('重启服务器失败');
@@ -1439,9 +1483,9 @@ const app = createApp({
                 }
             }
             
-            // 如果是变量节点，���证数据类型
+            // 如果是变量节点，验证数据类型
             if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
-                this.formErrors.value = '请择数据类型';
+                this.formErrors.value = '请选择数据类型';
                 isValid = false;
             }
             
@@ -1529,7 +1573,7 @@ const app = createApp({
                     case 'float': {
                         const num = parseFloat(value);
                         if (isNaN(num)) {
-                            this.formErrors.value = '���输入有效的数字';
+                            this.formErrors.value = '输入有效的数字';
                             return;
                         }
                         const range = this.valueRanges[dataType];
@@ -1566,7 +1610,7 @@ const app = createApp({
                         break;
                     case 'datetime':
                         if (isNaN(Date.parse(value))) {
-                            this.formErrors.value = '请输入有效的日期时间格式（如：2024-01-01T00:00:00）';
+                            this.formErrors.value = '请��入有效的日期时间格式（如：2024-01-01T00:00:00）';
                             return;
                         }
                         break;
@@ -1584,8 +1628,106 @@ const app = createApp({
                 this.formErrors.value = '值格式无效';
             }
         },
+        validateBatchSettings() {
+            this.batchErrors = {
+                nameTemplate: '',
+                nodeIdTemplate: '',
+                range: '',
+                value: '',
+                duplicates: []
+            };
+
+            // 检查名称模板
+            if (!this.batchSettings.nameTemplate) {
+                this.batchErrors.nameTemplate = '请输入节点名称模板';
+                return false;
+            }
+            if (!this.batchSettings.nameTemplate.includes('{n}')) {
+                this.batchErrors.nameTemplate = '名称模板必须包含{n}作为序号占位符';
+                return false;
+            }
+
+            // 检查节点ID模板
+            if (!this.batchSettings.nodeIdTemplate) {
+                this.batchErrors.nodeIdTemplate = '请输入节点ID模板';
+                return false;
+            }
+            if (!this.batchSettings.nodeIdTemplate.includes('{n}')) {
+                this.batchErrors.nodeIdTemplate = '节点ID模板必须包含{n}作为序号占位符';
+                return false;
+            }
+
+            // 检查序号范围
+            if (!this.batchSettings.startIndex || !this.batchSettings.endIndex) {
+                this.batchErrors.range = '请输入起始和结束序号';
+                return false;
+            }
+            if (this.batchSettings.startIndex > this.batchSettings.endIndex) {
+                this.batchErrors.range = '起始序号不能大于结束序号';
+                return false;
+            }
+            if (this.batchSettings.endIndex - this.batchSettings.startIndex > 1000) {
+                this.batchErrors.range = '一次最多只能创建1000个节点';
+                return false;
+            }
+
+            // 检查初始值
+            if (this.batchSettings.nodeType === 'variable') {
+                if (!this.batchSettings.valueTemplate) {
+                    this.batchErrors.value = '请输入初始值模板';
+                    return false;
+                }
+                // 检查初始值格式
+                try {
+                    const testValue = this.batchSettings.valueTemplate.replace('{n}', '1');
+                    if (this.batchSettings.dataType === 'double' || this.batchSettings.dataType === 'float') {
+                        if (isNaN(parseFloat(testValue))) {
+                            this.batchErrors.value = '初始值必须是有效的数字';
+                            return false;
+                        }
+                    } else if (this.batchSettings.dataType.startsWith('int') || 
+                              this.batchSettings.dataType.startsWith('uint')) {
+                        if (!Number.isInteger(Number(testValue))) {
+                            this.batchErrors.value = '初始值必须是整数';
+                            return false;
+                        }
+                    }
+                } catch (e) {
+                    this.batchErrors.value = '初始值格式无效';
+                    return false;
+                }
+            }
+
+            // 检查节点ID格式和重复
+            const nodeIds = new Set();
+            const existingNodeIds = new Set(this.nodes.map(node => node.node_id));
+            
+            for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
+                const nodeId = this.batchSettings.nodeIdTemplate.replace('{n}', i);
+                
+                // 检查节点ID格式
+                if (!this.validateNodeId(nodeId)) {
+                    this.batchErrors.nodeIdTemplate = `节点ID格式无效: ${nodeId}`;
+                    return false;
+                }
+                
+                // 检查是否与现有节点重复
+                if (existingNodeIds.has(nodeId)) {
+                    this.batchErrors.duplicates.push(nodeId);
+                }
+                
+                // 检查批量创建内部是否有重复
+                if (nodeIds.has(nodeId)) {
+                    this.batchErrors.nodeIdTemplate = `批量创建中存在重复的节点ID: ${nodeId}`;
+                    return false;
+                }
+                nodeIds.add(nodeId);
+            }
+
+            return this.batchErrors.duplicates.length === 0;
+        },
         showBatchAddModal() {
-            // 重置批量设置
+            // 重置批量设置和错误
             this.batchSettings = {
                 nameTemplate: '',
                 nodeIdTemplate: '',
@@ -1601,10 +1743,28 @@ const app = createApp({
                 variationInterval: 1000,
                 decimalPlaces: 2
             };
+            this.batchErrors = {
+                nameTemplate: '',
+                nodeIdTemplate: '',
+                range: '',
+                value: '',
+                duplicates: []
+            };
             this.batchAddModal.show();
         },
         async saveBatchNodes() {
             if (!this.isBatchFormValid || this.isProcessing) return;
+            
+            // 执行验证
+            if (!this.validateBatchSettings()) {
+                if (this.batchErrors.duplicates.length > 0) {
+                    if (!confirm(`以下节点ID已存在，是否继续？\n${this.batchErrors.duplicates.join('\n')}`)) {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
             
             this.isProcessing = true;
             const nodes = [];
@@ -1643,7 +1803,7 @@ const app = createApp({
                             errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${data.error}`);
                         }
                     } catch (error) {
-                        errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${error.message}`);
+                        errors.push(`节�� ${node.name} (${node.node_id}) 创建失败: ${error.message}`);
                     }
                 }
 
