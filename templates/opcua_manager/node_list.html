@@ -115,7 +115,12 @@
                     <form @submit.prevent="saveNode" id="nodeForm">
                         <div class="mb-3">
                             <label for="name" class="form-label">名称</label>
-                            <input type="text" class="form-control" id="name" v-model="currentNode.name" required>
+                            <input type="text" class="form-control" id="name" 
+                                   v-model="currentNode.name" required
+                                   :class="{ 'is-invalid': formErrors.name }">
+                            <div class="invalid-feedback" v-if="formErrors.name">
+                                [[ formErrors.name ]]
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="nodeType" class="form-label">节点类型</label>
@@ -129,21 +134,25 @@
                         <div class="mb-3" v-if="currentNode.node_type === 'variable'">
                             <label for="dataType" class="form-label">数据类型</label>
                             <select class="form-control" id="dataType" v-model="currentNode.data_type" 
-                                    :disabled="isEditMode">
+                                    :disabled="isEditMode"
+                                    :class="{ 'is-invalid': formErrors.value }">
                                 <option v-for="type in dataTypes" :key="type.value" :value="type.value">
                                     [[ type.label ]]
                                 </option>
                             </select>
+                            <div class="invalid-feedback" v-if="formErrors.value">
+                                [[ formErrors.value ]]
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="nodeIdentifier" class="form-label">节点ID</label>
                             <input type="text" class="form-control" id="nodeIdentifier" 
                                    v-model="currentNode.node_id" required 
                                    :disabled="isEditMode"
-                                   :class="{ 'is-invalid': nodeIdError }"
+                                   :class="{ 'is-invalid': nodeIdError || formErrors.nodeId }"
                                    @input="checkNodeIdExists(currentNode.node_id)">
-                            <div class="invalid-feedback" v-if="nodeIdError">
-                                [[ nodeIdError ]]
+                            <div class="invalid-feedback" v-if="nodeIdError || formErrors.nodeId">
+                                [[ nodeIdError || formErrors.nodeId ]]
                             </div>
                             <small class="form-text text-muted">
                                 支持的格式：<br>
@@ -224,7 +233,8 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" @click="saveNode">保存</button>
+                    <button type="button" class="btn btn-primary" @click="saveNode" 
+                            :disabled="!isFormValid">保存</button>
                 </div>
             </div>
         </div>
@@ -387,7 +397,12 @@ const app = createApp({
                 }
             },
             nodeIdError: '',
-            isCheckingNodeId: false
+            isCheckingNodeId: false,
+            formErrors: {
+                name: '',
+                nodeId: '',
+                value: ''
+            }
         }
     },
     computed: {
@@ -435,6 +450,24 @@ const app = createApp({
                 'bg-success': this.serverRunning,
                 'bg-danger': !this.serverRunning
             }
+        },
+        isFormValid() {
+            // 检查必填字段
+            if (!this.currentNode.name || !this.currentNode.node_id) {
+                return false;
+            }
+            
+            // 如果是新建节点，检查节点ID格式
+            if (!this.isEditMode && this.nodeIdError) {
+                return false;
+            }
+            
+            // 如果是变量节点，检查数据类型
+            if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
+                return false;
+            }
+            
+            return true;
         }
     },
     methods: {
@@ -473,30 +506,39 @@ const app = createApp({
             this.isEditMode = false
             this.currentNode = this.getEmptyNode()
             this.nodeIdError = ''
+            this.formErrors = {
+                name: '',
+                nodeId: '',
+                value: ''
+            }
             this.modal.show()
         },
         editNode(node) {
             this.isEditMode = true
             this.currentNode = { ...node }
             this.nodeIdError = ''
+            this.formErrors = {
+                name: '',
+                nodeId: '',
+                value: ''
+            }
             this.modal.show()
         },
         async saveNode() {
-            if (!this.serverRunning && this.currentNode.node_type === 'variable') {
-                if (!confirm('OPC UA服务器未运行，节点将只保存在数据库中。是否继续？')) {
-                    return
-                }
+            if (!this.isFormValid) {
+                return;
             }
             
             try {
+                // 如果是添加新节点，先检查节点ID
                 if (!this.isEditMode) {
-                    const exists = await this.checkNodeIdExists(this.currentNode.node_id)
+                    const exists = await this.checkNodeIdExists(this.currentNode.node_id);
                     if (exists || this.nodeIdError) {
-                        return
+                        return;
                     }
                 }
                 
-                const url = this.isEditMode ? `/node/${this.currentNode.id}/edit/` : '/node/add/'
+                const url = this.isEditMode ? `/node/${this.currentNode.id}/edit/` : '/node/add/';
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: {
@@ -504,23 +546,23 @@ const app = createApp({
                         'X-CSRFToken': this.getCsrfToken()
                     },
                     body: JSON.stringify(this.currentNode)
-                })
-                const data = await response.json()
+                });
+                const data = await response.json();
                 if (data.success) {
-                    this.modal.hide()
-                    await this.loadNodes()
-                    this.needsRestart = true
-                    this.nodeIdError = ''
+                    this.modal.hide();
+                    await this.loadNodes();
+                    this.needsRestart = true;
+                    this.nodeIdError = '';
                 } else {
                     if (data.error.includes('节点ID')) {
-                        this.nodeIdError = data.error
+                        this.nodeIdError = data.error;
                     } else {
-                        alert('保存失败: ' + data.error)
+                        alert('保存失败: ' + data.error);
                     }
                 }
             } catch (error) {
-                console.error('Error saving node:', error)
-                alert('保存失败')
+                console.error('Error saving node:', error);
+                alert('保存失败');
             }
         },
         async confirmDelete(node) {
@@ -719,6 +761,39 @@ const app = createApp({
             }
             
             return false;
+        },
+        validateForm() {
+            let isValid = true;
+            this.formErrors = {
+                name: '',
+                nodeId: '',
+                value: ''
+            };
+            
+            // 验证名称
+            if (!this.currentNode.name) {
+                this.formErrors.name = '请输入节点名称';
+                isValid = false;
+            }
+            
+            // 验证节点ID（仅在新建时）
+            if (!this.isEditMode) {
+                if (!this.currentNode.node_id) {
+                    this.formErrors.nodeId = '请输入节点ID';
+                    isValid = false;
+                } else if (this.nodeIdError) {
+                    this.formErrors.nodeId = this.nodeIdError;
+                    isValid = false;
+                }
+            }
+            
+            // 如果是变量节点，验证数据类型
+            if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
+                this.formErrors.value = '请选择数据类型';
+                isValid = false;
+            }
+            
+            return isValid;
         }
     },
     mounted() {
