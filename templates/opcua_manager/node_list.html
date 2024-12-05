@@ -138,7 +138,13 @@
                         <div class="mb-3">
                             <label for="nodeIdentifier" class="form-label">节点ID</label>
                             <input type="text" class="form-control" id="nodeIdentifier" 
-                                   v-model="currentNode.node_id" required :disabled="isEditMode">
+                                   v-model="currentNode.node_id" required 
+                                   :disabled="isEditMode"
+                                   :class="{ 'is-invalid': nodeIdError }"
+                                   @input="checkNodeIdExists(currentNode.node_id)">
+                            <div class="invalid-feedback" v-if="nodeIdError">
+                                [[ nodeIdError ]]
+                            </div>
                             <small class="form-text text-muted">格式示例: ns=1;i=1000</small>
                         </div>
                         <div class="mb-3" v-if="currentNode.node_type === 'variable'">
@@ -373,7 +379,9 @@ const app = createApp({
                     interval: 100,
                     description: '正弦波模拟(-1到1)'
                 }
-            }
+            },
+            nodeIdError: '',
+            isCheckingNodeId: false
         }
     },
     computed: {
@@ -397,7 +405,7 @@ const app = createApp({
                     case 'uint16':
                     case 'uint32':
                     case 'uint64':
-                        hint += '整数'
+                        hint += '��数'
                         break
                     case 'boolean':
                         hint += 'true或false'
@@ -458,11 +466,13 @@ const app = createApp({
         showAddNodeModal() {
             this.isEditMode = false
             this.currentNode = this.getEmptyNode()
+            this.nodeIdError = ''
             this.modal.show()
         },
         editNode(node) {
             this.isEditMode = true
             this.currentNode = { ...node }
+            this.nodeIdError = ''
             this.modal.show()
         },
         async saveNode() {
@@ -473,6 +483,13 @@ const app = createApp({
             }
             
             try {
+                if (!this.isEditMode) {
+                    const exists = await this.checkNodeIdExists(this.currentNode.node_id)
+                    if (exists || this.nodeIdError) {
+                        return
+                    }
+                }
+                
                 const url = this.isEditMode ? `/node/${this.currentNode.id}/edit/` : '/node/add/'
                 const response = await fetch(url, {
                     method: 'POST',
@@ -487,8 +504,13 @@ const app = createApp({
                     this.modal.hide()
                     await this.loadNodes()
                     this.needsRestart = true
+                    this.nodeIdError = ''
                 } else {
-                    alert('保存失败: ' + data.error)
+                    if (data.error.includes('节点ID')) {
+                        this.nodeIdError = data.error
+                    } else {
+                        alert('保存失败: ' + data.error)
+                    }
                 }
             } catch (error) {
                 console.error('Error saving node:', error)
@@ -620,6 +642,34 @@ const app = createApp({
             } finally {
                 this.isRestarting = false
             }
+        },
+        async checkNodeIdExists(nodeId) {
+            if (!nodeId) return false;
+            
+            this.isCheckingNodeId = true;
+            this.nodeIdError = '';
+            
+            try {
+                if (!this.validateNodeId(nodeId)) {
+                    this.nodeIdError = '节点ID格式无效，正确格式如：ns=1;i=1000';
+                    return true;
+                }
+                
+                const existingNode = this.nodes.find(node => node.node_id === nodeId);
+                if (existingNode) {
+                    this.nodeIdError = '节点ID已存在';
+                    return true;
+                }
+                
+                return false;
+            } finally {
+                this.isCheckingNodeId = false;
+            }
+        },
+        
+        validateNodeId(nodeId) {
+            const pattern = /^ns=\d+;[is]=\d+$/;
+            return pattern.test(nodeId);
         }
     },
     mounted() {

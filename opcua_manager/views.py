@@ -105,6 +105,15 @@ def add_node(request):
         data = json.loads(request.body)
         logger.info(f"Adding node with data: {data}")
         
+        # 检查节点ID是否已存在
+        if OpcNode.objects.filter(node_id=data['node_id']).exists():
+            error_msg = f"节点ID {data['node_id']} 已存在，不允许重复创建"
+            logger.error(error_msg)
+            return JsonResponse({
+                'success': False,
+                'error': error_msg
+            })
+        
         with transaction.atomic():
             # 只在数据库中创建节点记录
             node = OpcNode.objects.create(
