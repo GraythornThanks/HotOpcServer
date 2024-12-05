@@ -364,6 +364,10 @@
                     <i class="bi bi-plus-lg"></i>
                     添加节点
                 </button>
+                <button class="btn btn-info" @click="showBatchAddModal">
+                    <i class="bi bi-collection"></i>
+                    批量添加
+                </button>
                 <a href="{% url 'server-start' %}" class="btn btn-success" :class="{ disabled: serverRunning }">
                     <i class="bi bi-play-fill"></i>
                     启动服务器
@@ -641,6 +645,146 @@
             </div>
         </div>
     </div>
+
+    <!-- 批量添加模态框 -->
+    <div class="modal fade" id="batchAddModal" tabindex="-1" ref="batchAddModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量添加节点</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form @submit.prevent="saveBatchNodes" id="batchNodeForm">
+                        <!-- 基本设置 -->
+                        <div class="mb-3">
+                            <label class="form-label">节点名称模板</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" v-model="batchSettings.nameTemplate" 
+                                       placeholder="例如：tube{n}" required>
+                                <span class="input-group-text" title="使用{n}表示序号位置">?</span>
+                            </div>
+                            <small class="form-text text-muted">使用{n}表示序号位置，如：tube{n}</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">节点ID模板</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" v-model="batchSettings.nodeIdTemplate" 
+                                       placeholder="例如：ns=1;s=tube{n}" required>
+                                <span class="input-group-text" title="使用{n}表示序号位置">?</span>
+                            </div>
+                            <small class="form-text text-muted">使用{n}表示序号位置，如：ns=1;s=tube{n}</small>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col">
+                                <label class="form-label">起始序号</label>
+                                <input type="number" class="form-control" v-model="batchSettings.startIndex" min="1" required>
+                            </div>
+                            <div class="col">
+                                <label class="form-label">结束序号</label>
+                                <input type="number" class="form-control" v-model="batchSettings.endIndex" min="1" required>
+                            </div>
+                        </div>
+
+                        <!-- 节点配置 -->
+                        <div class="mb-3">
+                            <label class="form-label">节点类型</label>
+                            <select class="form-control" v-model="batchSettings.nodeType">
+                                <option v-for="type in nodeTypes" :key="type.value" :value="type.value">
+                                    [[ type.label ]]
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" v-if="batchSettings.nodeType === 'variable'">
+                            <label class="form-label">数据类型</label>
+                            <select class="form-control" v-model="batchSettings.dataType">
+                                <option v-for="type in dataTypes" :key="type.value" :value="type.value">
+                                    [[ type.label ]]
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3" v-if="batchSettings.nodeType === 'variable'">
+                            <label class="form-label">初始值模板</label>
+                            <input type="text" class="form-control" v-model="batchSettings.valueTemplate" 
+                                   placeholder="例如：{n}或固定值">
+                            <small class="form-text text-muted">可以使用{n}表示序号，或输入固定值</small>
+                        </div>
+
+                        <!-- 变化设置 -->
+                        <div class="mb-3">
+                            <label class="form-label">变化类型</label>
+                            <select class="form-control" v-model="batchSettings.variationType">
+                                <option v-for="type in variationTypes" :key="type.value" :value="type.value">
+                                    [[ type.label ]]
+                                </option>
+                            </select>
+                        </div>
+
+                        <template v-if="batchSettings.variationType !== 'none'">
+                            <div class="mb-3" v-if="['random', 'linear', 'cycle'].includes(batchSettings.variationType)">
+                                <div class="row">
+                                    <div class="col">
+                                        <label class="form-label">最小值</label>
+                                        <input type="number" class="form-control" v-model="batchSettings.variationMin" step="any">
+                                    </div>
+                                    <div class="col">
+                                        <label class="form-label">最大值</label>
+                                        <input type="number" class="form-control" v-model="batchSettings.variationMax" step="any">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3" v-if="['linear', 'cycle'].includes(batchSettings.variationType)">
+                                <label class="form-label">变化步长</label>
+                                <input type="number" class="form-control" v-model="batchSettings.variationStep" step="any">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">变化间隔(毫秒)</label>
+                                <input type="number" class="form-control" v-model="batchSettings.variationInterval" min="100">
+                            </div>
+                            <div class="mb-3" v-if="batchSettings.dataType === 'double' || batchSettings.dataType === 'float'">
+                                <label class="form-label">小数位数</label>
+                                <input type="number" class="form-control" v-model="batchSettings.decimalPlaces" min="0" max="10">
+                            </div>
+                        </template>
+
+                        <!-- 预览 -->
+                        <div class="mb-3">
+                            <label class="form-label">预览</label>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th>节点ID</th>
+                                            <th>初始值</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="preview in batchPreview" :key="preview.nodeId">
+                                            <td>[[ preview.name ]]</td>
+                                            <td>[[ preview.nodeId ]]</td>
+                                            <td>[[ preview.value ]]</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" @click="saveBatchNodes" 
+                            :disabled="!isBatchFormValid || isProcessing">
+                        [[ isProcessing ? '处理中...' : '保存' ]]
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -837,7 +981,24 @@ const app = createApp({
                 'uint64': { min: 0n, max: 18446744073709551615n },
                 'float': { min: -3.4e38, max: 3.4e38 },
                 'double': { min: -1.8e308, max: 1.8e308 }
-            }
+            },
+            batchSettings: {
+                nameTemplate: '',
+                nodeIdTemplate: '',
+                startIndex: 1,
+                endIndex: 1,
+                nodeType: 'variable',
+                dataType: 'double',
+                valueTemplate: '',
+                variationType: 'none',
+                variationMin: null,
+                variationMax: null,
+                variationStep: null,
+                variationInterval: 1000,
+                decimalPlaces: 2
+            },
+            isProcessing: false,
+            batchAddModal: null
         }
     },
     computed: {
@@ -912,6 +1073,29 @@ const app = createApp({
             }
             
             return true;
+        },
+        batchPreview() {
+            if (!this.batchSettings.nameTemplate || !this.batchSettings.nodeIdTemplate || 
+                !this.batchSettings.startIndex || !this.batchSettings.endIndex) {
+                return [];
+            }
+
+            const preview = [];
+            for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
+                const name = this.batchSettings.nameTemplate.replace('{n}', i);
+                const nodeId = this.batchSettings.nodeIdTemplate.replace('{n}', i);
+                const value = this.batchSettings.valueTemplate ? 
+                             this.batchSettings.valueTemplate.replace('{n}', i) : '';
+                preview.push({ name, nodeId, value });
+            }
+            return preview;
+        },
+        isBatchFormValid() {
+            return this.batchSettings.nameTemplate && 
+                   this.batchSettings.nodeIdTemplate && 
+                   this.batchSettings.startIndex && 
+                   this.batchSettings.endIndex &&
+                   this.batchSettings.startIndex <= this.batchSettings.endIndex;
         }
     },
     methods: {
@@ -939,7 +1123,7 @@ const app = createApp({
                 if (data.success) {
                     this.nodes = data.nodes
                 } else {
-                    alert('加载节点失��: ' + data.error)
+                    alert('加载节点失: ' + data.error)
                 }
             } catch (error) {
                 console.error('Error loading nodes:', error)
@@ -1255,7 +1439,7 @@ const app = createApp({
                 }
             }
             
-            // 如果是变量节点，验证数据类型
+            // 如果是变量节点，���证数据类型
             if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
                 this.formErrors.value = '请择数据类型';
                 isValid = false;
@@ -1345,7 +1529,7 @@ const app = createApp({
                     case 'float': {
                         const num = parseFloat(value);
                         if (isNaN(num)) {
-                            this.formErrors.value = '请输入有效的数字';
+                            this.formErrors.value = '���输入有效的数字';
                             return;
                         }
                         const range = this.valueRanges[dataType];
@@ -1399,11 +1583,89 @@ const app = createApp({
             } catch (e) {
                 this.formErrors.value = '值格式无效';
             }
+        },
+        showBatchAddModal() {
+            // 重置批量设置
+            this.batchSettings = {
+                nameTemplate: '',
+                nodeIdTemplate: '',
+                startIndex: 1,
+                endIndex: 1,
+                nodeType: 'variable',
+                dataType: 'double',
+                valueTemplate: '',
+                variationType: 'none',
+                variationMin: null,
+                variationMax: null,
+                variationStep: null,
+                variationInterval: 1000,
+                decimalPlaces: 2
+            };
+            this.batchAddModal.show();
+        },
+        async saveBatchNodes() {
+            if (!this.isBatchFormValid || this.isProcessing) return;
+            
+            this.isProcessing = true;
+            const nodes = [];
+            const errors = [];
+
+            try {
+                for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
+                    const node = {
+                        name: this.batchSettings.nameTemplate.replace('{n}', i),
+                        node_id: this.batchSettings.nodeIdTemplate.replace('{n}', i),
+                        node_type: this.batchSettings.nodeType,
+                        data_type: this.batchSettings.dataType,
+                        value: this.batchSettings.valueTemplate ? 
+                               this.batchSettings.valueTemplate.replace('{n}', i) : '',
+                        variation_type: this.batchSettings.variationType,
+                        variation_interval: this.batchSettings.variationInterval,
+                        variation_min: this.batchSettings.variationMin,
+                        variation_max: this.batchSettings.variationMax,
+                        variation_step: this.batchSettings.variationStep,
+                        decimal_places: this.batchSettings.decimalPlaces
+                    };
+
+                    try {
+                        const response = await fetch('/node/add/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': this.getCsrfToken()
+                            },
+                            body: JSON.stringify(node)
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            nodes.push(data.data);
+                        } else {
+                            errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${data.error}`);
+                        }
+                    } catch (error) {
+                        errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${error.message}`);
+                    }
+                }
+
+                if (nodes.length > 0) {
+                    await this.loadNodes();
+                    this.needsRestart = true;
+                    this.batchAddModal.hide();
+                    this.showSuccess(`成功创建 ${nodes.length} 个节点`);
+                }
+
+                if (errors.length > 0) {
+                    this.showError(`部分节点创建失败:\n${errors.join('\n')}`);
+                }
+            } finally {
+                this.isProcessing = false;
+            }
         }
     },
     mounted() {
         this.modal = new bootstrap.Modal(this.$refs.nodeModal)
         this.confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'))
+        this.batchAddModal = new bootstrap.Modal(this.$refs.batchAddModal)
         this.loadNodes()
         this.startAutoRefresh()
         
