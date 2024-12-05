@@ -524,7 +524,7 @@ const app = createApp({
             }
         },
         async confirmDelete(node) {
-            if (confirm('确定要删除这个节点��？')) {
+            if (confirm('确定要删除这个节点吗？')) {
                 try {
                     const response = await fetch(`/node/${node.id}/delete/`, {
                         method: 'POST',
@@ -690,7 +690,7 @@ const app = createApp({
             // 检查命名空间部分
             const nsMatch = parts[0].match(/^ns=(\d+)$/);
             if (!nsMatch) {
-                return false;
+                return false, "命名空间格式无效，必须是数字";
             }
             
             // 检查标识符部分
