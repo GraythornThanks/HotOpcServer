@@ -6,14 +6,328 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
+    /* 主题颜色 */
+    :root {
+        --primary-color: #0d6efd;
+        --success-color: #198754;
+        --warning-color: #ffc107;
+        --danger-color: #dc3545;
+        --info-color: #0dcaf0;
+        --light-bg: #f8f9fa;
+        --border-color: #dee2e6;
+        --text-color: #495057;
+        --text-muted: #6c757d;
+    }
+
+    /* 全局样式 */
+    body {
+        background-color: #f5f7fa;
+    }
+    
     [v-cloak] {
         display: none;
     }
+
+    /* 加载动画 */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+
+    .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 3px solid var(--border-color);
+        border-radius: 50%;
+        border-top-color: var(--primary-color);
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* 表格样式 */
+    .table-container {
+        position: relative;
+        min-height: 200px;
+    }
+
+    .table {
+        margin-bottom: 0;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .table thead th {
+        background-color: var(--light-bg);
+        border-bottom: 2px solid var(--border-color);
+        color: var(--text-color);
+        font-weight: 600;
+        padding: 1rem;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .table tbody tr {
+        transition: all 0.2s;
+    }
+
+    .table tbody tr:hover {
+        background-color: rgba(13, 110, 253, 0.04);
+        transform: scale(1.002);
+    }
+
+    .table td {
+        padding: 1rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    /* 空状态样式 */
+    .empty-state {
+        text-align: center;
+        padding: 3rem 1rem;
+        color: var(--text-muted);
+    }
+
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-state p {
+        font-size: 1.1rem;
+        margin-bottom: 0;
+    }
+
+    /* 工具栏样式 */
+    .toolbar {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    /* 按钮组样式 */
+    .action-buttons {
+        display: flex;
+        gap: 0.75rem;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.2s;
+        border: none;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn:active {
+        transform: translateY(0);
+    }
+
+    .btn i {
+        font-size: 1.1em;
+    }
+
+    /* 状态标签样式 */
+    .badge {
+        padding: 0.5em 1em;
+        border-radius: 6px;
+        font-weight: 500;
+    }
+
+    .badge.bg-success {
+        background-color: rgba(25, 135, 84, 0.1) !important;
+        color: var(--success-color);
+    }
+
+    .badge.bg-danger {
+        background-color: rgba(220, 53, 69, 0.1) !important;
+        color: var(--danger-color);
+    }
+
+    /* 变化标记样式 */
+    .variation-badge {
+        background-color: rgba(13, 202, 240, 0.1);
+        color: var(--info-color);
+        padding: 0.4em 0.8em;
+        border-radius: 6px;
+        font-size: 0.875em;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        cursor: help;
+    }
+
+    /* 重启提示样式 */
     .restart-alert {
         display: none;
+        background-color: #fff3cd;
+        border-left: 4px solid var(--warning-color);
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
+
     .restart-alert.show {
         display: block;
+        animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+        from {
+            transform: translateY(-20px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .toolbar {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .action-buttons {
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+
+    /* 确认对话框样式 */
+    .confirm-modal .modal-content {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+    
+    .confirm-modal .modal-header {
+        border: none;
+        padding: 1.5rem 1.5rem 0.5rem;
+    }
+    
+    .confirm-modal .modal-body {
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .confirm-modal .modal-footer {
+        border: none;
+        padding: 0.5rem 1.5rem 1.5rem;
+        justify-content: center;
+        gap: 1rem;
+    }
+    
+    .confirm-modal .modal-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+    
+    .confirm-modal .modal-icon.warning {
+        color: var(--warning-color);
+    }
+    
+    .confirm-modal .modal-icon.danger {
+        color: var(--danger-color);
+    }
+    
+    .confirm-modal .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 0.5rem;
+    }
+    
+    .confirm-modal .modal-message {
+        color: var(--text-muted);
+        margin-bottom: 0;
+    }
+    
+    .confirm-modal .btn-confirm {
+        min-width: 100px;
+    }
+    
+    .confirm-modal .node-info {
+        background-color: var(--light-bg);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+        text-align: left;
+    }
+    
+    .confirm-modal .node-info .info-label {
+        font-weight: 500;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+    
+    .confirm-modal .node-info .info-value {
+        color: var(--text-color);
+        margin-bottom: 0;
+    }
+
+    /* 表单验证样式 */
+    .form-control.is-invalid,
+    .form-select.is-invalid {
+        border-color: var(--danger-color);
+        box-shadow: none;
+    }
+    
+    .form-control.is-invalid:focus,
+    .form-select.is-invalid:focus {
+        border-color: var(--danger-color);
+        box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+    }
+    
+    .invalid-feedback {
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+    
+    .form-text.text-help {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+    
+    .form-text.text-range {
+        display: flex;
+        justify-content: space-between;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
     }
 </style>
 {% endblock %}
@@ -23,81 +337,107 @@
 <div id="app" v-cloak>
     <div class="container mt-4">
         <!-- 重启提示 -->
-        <div class="alert alert-warning restart-alert" :class="{ show: needsRestart }">
-            <i class="bi bi-exclamation-triangle"></i>
-            您已修改了节点配置，需要重启服务器才能生效。
-            <button class="btn btn-warning btn-sm ms-3" @click="restartServer" :disabled="isRestarting">
-                <i class="bi bi-arrow-clockwise"></i>
-                [[ isRestarting ? '重启中...' : '立即重启' ]]
-            </button>
+        <div class="restart-alert" :class="{ show: needsRestart }">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <span>您已修改了节点配置，需要重启服务器才能生效。</span>
+                </div>
+                <button class="btn btn-warning btn-sm" @click="restartServer" :disabled="isRestarting">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    [[ isRestarting ? '重启中...' : '立即重启' ]]
+                </button>
+            </div>
         </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <!-- 工具栏 -->
+        <div class="toolbar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-3">
-                <h2>OPC UA节点管理</h2>
-                <span :class="serverStatusClass">服务器状态: [[ serverStatus ]]</span>
+                <h2 class="mb-0">OPC UA节点管理</h2>
+                <span :class="serverStatusClass">
+                    <i class="bi" :class="serverRunning ? 'bi-play-fill' : 'bi-stop-fill'"></i>
+                    [[ serverStatus ]]
+                </span>
             </div>
-            <div>
+            <div class="action-buttons">
                 <button class="btn btn-primary" @click="showAddNodeModal">
-                    <i class="bi bi-plus"></i> 添加节点
+                    <i class="bi bi-plus-lg"></i>
+                    添加节点
                 </button>
                 <a href="{% url 'server-start' %}" class="btn btn-success" :class="{ disabled: serverRunning }">
-                    <i class="bi bi-play-fill"></i> 启动服务器
+                    <i class="bi bi-play-fill"></i>
+                    启动服务器
                 </a>
                 <button class="btn btn-warning" @click="restartServer" :disabled="isRestarting || !serverRunning">
                     <i class="bi bi-arrow-clockwise"></i>
                     [[ isRestarting ? '重启中' : '重启服务器' ]]
                 </button>
                 <a href="{% url 'server-stop' %}" class="btn btn-danger" :class="{ disabled: !serverRunning }">
-                    <i class="bi bi-stop-fill"></i> 停止服务器
+                    <i class="bi bi-stop-fill"></i>
+                    停止服务器
                 </a>
             </div>
         </div>
 
+        <!-- 节点列表 -->
         <div class="card">
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
-                            <tr>
-                                <th>名称</th>
-                                <th>节点类型</th>
-                                <th>数据类型</th>
-                                <th>节点ID</th>
-                                <th>值</th>
-                                <th>描述</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="node in nodes" :key="node.id">
-                                <td>[[ node.name ]]</td>
-                                <td>[[ getNodeTypeDisplay(node.node_type) ]]</td>
-                                <td>[[ getDataTypeDisplay(node.data_type) ]]</td>
-                                <td>[[ node.node_id ]]</td>
-                                <td>[[ node.value || '-' ]]</td>
-                                <td>[[ node.description || '-' ]]</td>
-                                <td>
-                                    <div class="d-flex gap-2">
-                                        <button class="btn btn-sm btn-info" @click="editNode(node)">
-                                            <i class="bi bi-pencil"></i> 编辑
-                                        </button>
-                                        <button class="btn btn-sm btn-danger" @click="confirmDelete(node)">
-                                            <i class="bi bi-trash"></i> 删除
-                                        </button>
-                                        <span v-if="node.variation_type !== 'none'" 
-                                              class="badge bg-primary" 
-                                              :title="'变化类型: ' + getVariationTypeDisplay(node.variation_type) + '\n间隔: ' + node.variation_interval + 'ms'">
-                                            <i class="bi bi-arrow-repeat"></i>
-                                        </span>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr v-if="nodes.length === 0">
-                                <td colspan="7" class="text-center">暂无节点数据</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <div class="card-body p-0">
+                <div class="table-container">
+                    <!-- 加载动画 -->
+                    <div class="loading-overlay" v-if="isLoading">
+                        <div class="loading-spinner"></div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th>节点类型</th>
+                                    <th>数据类型</th>
+                                    <th>节点ID</th>
+                                    <th>���</th>
+                                    <th>描述</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="node in nodes" :key="node.id">
+                                    <td>[[ node.name ]]</td>
+                                    <td>[[ getNodeTypeDisplay(node.node_type) ]]</td>
+                                    <td>[[ getDataTypeDisplay(node.data_type) ]]</td>
+                                    <td>[[ node.node_id ]]</td>
+                                    <td>[[ node.value || '-' ]]</td>
+                                    <td>[[ node.description || '-' ]]</td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn btn-info btn-sm" @click="editNode(node)">
+                                                <i class="bi bi-pencil"></i>
+                                                编辑
+                                            </button>
+                                            <button class="btn btn-danger btn-sm" @click="confirmDelete(node)">
+                                                <i class="bi bi-trash"></i>
+                                                删除
+                                            </button>
+                                            <span v-if="node.variation_type !== 'none'" 
+                                                  class="variation-badge" 
+                                                  :title="'变化类型: ' + getVariationTypeDisplay(node.variation_type) + '\n间隔: ' + node.variation_interval + 'ms'">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr v-if="nodes.length === 0">
+                                    <td colspan="7">
+                                        <div class="empty-state">
+                                            <i class="bi bi-database-x"></i>
+                                            <p>暂无节点数据</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -135,13 +475,14 @@
                             <label for="dataType" class="form-label">数据类型</label>
                             <select class="form-control" id="dataType" v-model="currentNode.data_type" 
                                     :disabled="isEditMode"
-                                    :class="{ 'is-invalid': formErrors.value }">
+                                    :class="{ 'is-invalid': formErrors.dataType }"
+                                    @change="validateValue">
                                 <option v-for="type in dataTypes" :key="type.value" :value="type.value">
                                     [[ type.label ]]
                                 </option>
                             </select>
-                            <div class="invalid-feedback" v-if="formErrors.value">
-                                [[ formErrors.value ]]
+                            <div class="invalid-feedback" v-if="formErrors.dataType">
+                                [[ formErrors.dataType ]]
                             </div>
                         </div>
                         <div class="mb-3">
@@ -154,7 +495,7 @@
                             <div class="invalid-feedback" v-if="nodeIdError || formErrors.nodeId">
                                 [[ nodeIdError || formErrors.nodeId ]]
                             </div>
-                            <small class="form-text text-muted">
+                            <small class="form-text text-help">
                                 支持的格式：<br>
                                 - 数字标识符：ns=1;i=1000<br>
                                 - 字符串标识符：ns=1;s=MyNode<br>
@@ -163,9 +504,22 @@
                             </small>
                         </div>
                         <div class="mb-3" v-if="currentNode.node_type === 'variable'">
-                            <label for="value" class="form-label">值</label>
-                            <input type="text" class="form-control" id="value" v-model="currentNode.value">
-                            <small class="form-text text-muted">[[ valueHint ]]</small>
+                            <label for="value" class="form-label">初始值 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="value" 
+                                   v-model="currentNode.value"
+                                   :class="{ 'is-invalid': formErrors.value }"
+                                   @input="validateValue"
+                                   required>
+                            <div class="invalid-feedback" v-if="formErrors.value">
+                                [[ formErrors.value ]]
+                            </div>
+                            <div class="form-text text-help" v-if="valueHint">
+                                [[ valueHint ]]
+                            </div>
+                            <div class="form-text text-range" v-if="valueRange">
+                                <span>最小值: [[ valueRange.min ]]</span>
+                                <span>最大值: [[ valueRange.max ]]</span>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label for="description" class="form-label">描述</label>
@@ -233,8 +587,48 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" @click="saveNode" 
-                            :disabled="!isFormValid">保存</button>
+                    <button type="button" class="btn btn-primary" @click="saveNode" :disabled="!isFormValid">
+                        保存
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <div class="modal fade confirm-modal" id="confirmModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <i class="bi" :class="[confirmDialog.iconClass, 'modal-icon', confirmDialog.type]"></i>
+                    <h5 class="modal-title">[[ confirmDialog.title ]]</h5>
+                    <p class="modal-message">[[ confirmDialog.message ]]</p>
+                    
+                    <!-- 节点信息（仅在删除节点时显示） -->
+                    <div class="node-info" v-if="confirmDialog.type === 'danger' && confirmDialog.node">
+                        <div class="mb-2">
+                            <div class="info-label">节点名称</div>
+                            <p class="info-value">[[ confirmDialog.node.name ]]</p>
+                        </div>
+                        <div class="mb-2">
+                            <div class="info-label">节点ID</div>
+                            <p class="info-value">[[ confirmDialog.node.node_id ]]</p>
+                        </div>
+                        <div>
+                            <div class="info-label">节点类型</div>
+                            <p class="info-value">[[ getNodeTypeDisplay(confirmDialog.node.node_type) ]]</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        取消
+                    </button>
+                    <button type="button" 
+                            :class="['btn btn-confirm', confirmDialog.type === 'danger' ? 'btn-danger' : 'btn-warning']"
+                            @click="handleConfirm">
+                        [[ confirmDialog.confirmText ]]
+                    </button>
                 </div>
             </div>
         </div>
@@ -303,7 +697,7 @@ const app = createApp({
                     min: 0.8,
                     max: 1.2,
                     interval: 500,
-                    description: '压力模拟(0.8-1.2MPa)'
+                    description: '压力模(0.8-1.2MPa)'
                 },
                 flow: {
                     name: '流量',
@@ -402,44 +796,59 @@ const app = createApp({
                 name: '',
                 nodeId: '',
                 value: ''
+            },
+            confirmDialog: {
+                title: '',
+                message: '',
+                callback: null,
+                type: 'warning',  // 'warning' 或 'danger'
+                iconClass: '',
+                confirmText: '',
+                node: null
+            },
+            confirmModal: null,
+            valueRanges: {
+                'int32': { min: -2147483648, max: 2147483647 },
+                'int64': { min: -9223372036854775808n, max: 9223372036854775807n },
+                'uint16': { min: 0, max: 65535 },
+                'uint32': { min: 0, max: 4294967295 },
+                'uint64': { min: 0n, max: 18446744073709551615n },
+                'float': { min: -3.4e38, max: 3.4e38 },
+                'double': { min: -1.8e308, max: 1.8e308 }
             }
         }
     },
     computed: {
+        valueRange() {
+            if (this.currentNode.node_type !== 'variable') return null;
+            return this.valueRanges[this.currentNode.data_type];
+        },
         valueHint() {
-            if (!this.currentNode.node_type === 'variable') return ''
+            if (this.currentNode.node_type !== 'variable') return '';
             
-            const dataType = this.currentNode.data_type
-            const variationType = this.currentNode.variation_type
-            let hint = '请输入'
-            
-            if (variationType === 'cycle') {
-                hint += '起始值（将在范围内循环变化）'
-            } else {
-                switch(dataType) {
-                    case 'double':
-                    case 'float':
-                        hint += '数字（可包含小数点）'
-                        break
-                    case 'int32':
-                    case 'int64':
-                    case 'uint16':
-                    case 'uint32':
-                    case 'uint64':
-                        hint += '数'
-                        break
-                    case 'boolean':
-                        hint += 'true或false'
-                        break
-                    case 'datetime':
-                        hint += 'ISO格式的日期时间'
-                        break
-                    case 'array':
-                        hint += 'JSON格式的数组'
-                        break
-                }
+            const dataType = this.currentNode.data_type;
+            switch(dataType) {
+                case 'double':
+                case 'float':
+                    return '请输入数字（可包含小数点）';
+                case 'int32':
+                case 'int64':
+                    return '请输入整数';
+                case 'uint16':
+                case 'uint32':
+                case 'uint64':
+                    return '请输入非负整数';
+                case 'boolean':
+                    return '请输入 true 或 false';
+                case 'string':
+                    return '请输入字符串';
+                case 'datetime':
+                    return '请输入ISO格式的日期时间（如：2024-01-01T00:00:00）';
+                case 'array':
+                    return '请输入JSON格式的数组';
+                default:
+                    return '';
             }
-            return hint
         },
         serverStatus() {
             return this.serverRunning ? '运行中' : '已停止'
@@ -457,14 +866,27 @@ const app = createApp({
                 return false;
             }
             
-            // 如果是新建节点，检查节点ID格式
+            // 如果是新建节点，检查节点ID格���
             if (!this.isEditMode && this.nodeIdError) {
                 return false;
             }
             
-            // 如果是变量节点，检查数据类型
-            if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
-                return false;
+            // 如果是变量节点，检查数据类型和值
+            if (this.currentNode.node_type === 'variable') {
+                // 检查数据类型是否已选择
+                if (!this.currentNode.data_type) {
+                    return false;
+                }
+                
+                // 检查值是否存在且有效
+                if (!this.currentNode.value || this.formErrors.value) {
+                    return false;
+                }
+                
+                // 检查值是否在范围内
+                if (!this.isValueInRange()) {
+                    return false;
+                }
             }
             
             return true;
@@ -525,6 +947,8 @@ const app = createApp({
             this.modal.show()
         },
         async saveNode() {
+            // 保存前再次验证
+            this.validateValue();
             if (!this.isFormValid) {
                 return;
             }
@@ -566,26 +990,35 @@ const app = createApp({
             }
         },
         async confirmDelete(node) {
-            if (confirm('确定要删除这个节点吗？')) {
-                try {
-                    const response = await fetch(`/node/${node.id}/delete/`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRFToken': this.getCsrfToken()
+            this.showConfirmDialog({
+                type: 'danger',
+                iconClass: 'bi-trash',
+                title: '确认删除节点',
+                message: '此操作将永久删除该节点，且无法恢复。',
+                confirmText: '确认删除',
+                node: node,
+                callback: async () => {
+                    try {
+                        const response = await fetch(`/node/${node.id}/delete/`, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': this.getCsrfToken()
+                            }
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            await this.loadNodes();
+                            this.needsRestart = true;
+                            this.showSuccess('节点已删除');
+                        } else {
+                            this.showError('删除失败: ' + data.error);
                         }
-                    })
-                    const data = await response.json()
-                    if (data.success) {
-                        await this.loadNodes()
-                        this.needsRestart = true
-                    } else {
-                        alert('删除失败: ' + data.error)
+                    } catch (error) {
+                        console.error('Error deleting node:', error);
+                        this.showError('删除失败');
                     }
-                } catch (error) {
-                    console.error('Error deleting node:', error)
-                    alert('删除失败')
                 }
-            }
+            });
         },
         applyRulePreset(key) {
             const rule = this.rulePresets[key]
@@ -659,37 +1092,38 @@ const app = createApp({
             }
         },
         async restartServer() {
-            if (!confirm('确定要重启服务器吗？这将会中断所有当前连接。')) {
-                return
-            }
-            
-            this.isRestarting = true
-            try {
-                await fetch('{% url "server-stop" %}', {
-                    method: 'GET',
-                    headers: {
-                        'X-CSRFToken': this.getCsrfToken()
+            this.showConfirmDialog({
+                type: 'warning',
+                iconClass: 'bi-exclamation-triangle',
+                title: '确认重启服务器',
+                message: '重启服务器将会中断所有当前连接，是否继续？',
+                confirmText: '确认重启',
+                callback: async () => {
+                    this.isRestarting = true;
+                    try {
+                        await fetch('{% url "server-stop" %}', {
+                            method: 'GET',
+                            headers: { 'X-CSRFToken': this.getCsrfToken() }
+                        });
+                        
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        await fetch('{% url "server-start" %}', {
+                            method: 'GET',
+                            headers: { 'X-CSRFToken': this.getCsrfToken() }
+                        });
+                        
+                        this.needsRestart = false;
+                        await this.loadNodes();
+                        this.showSuccess('服务器已重启完成');
+                    } catch (error) {
+                        console.error('Error restarting server:', error);
+                        this.showError('重启服务器失败');
+                    } finally {
+                        this.isRestarting = false;
                     }
-                })
-                
-                await new Promise(resolve => setTimeout(resolve, 1000))
-                
-                await fetch('{% url "server-start" %}', {
-                    method: 'GET',
-                    headers: {
-                        'X-CSRFToken': this.getCsrfToken()
-                    }
-                })
-                
-                this.needsRestart = false
-                await this.loadNodes()
-                alert('服务器已重启完成')
-            } catch (error) {
-                console.error('Error restarting server:', error)
-                alert('重启服务器失败')
-            } finally {
-                this.isRestarting = false
-            }
+                }
+            });
         },
         async checkNodeIdExists(nodeId) {
             if (!nodeId) return false;
@@ -718,7 +1152,7 @@ const app = createApp({
         validateNodeId(nodeId) {
             if (!nodeId) return false;
             
-            // 基本格式检查：必须包含命名空间
+            // ���本格式检查：必须包含命名空间
             if (!nodeId.startsWith('ns=')) {
                 return false;
             }
@@ -754,7 +1188,7 @@ const app = createApp({
                 return guidPattern.test(idPart);
             }
             
-            // 二进制标识符：b=SGVsbG8gV29ybGQ=
+            // ��进制标识符：b=SGVsbG8gV29ybGQ=
             if (idPart.startsWith('b=')) {
                 const base64Pattern = /^b=[A-Za-z0-9+/]+=*$/;
                 return base64Pattern.test(idPart);
@@ -794,12 +1228,156 @@ const app = createApp({
             }
             
             return isValid;
+        },
+        showConfirmDialog(options) {
+            this.confirmDialog = {
+                ...this.confirmDialog,
+                ...options
+            };
+            this.confirmModal.show();
+        },
+        
+        handleConfirm() {
+            if (this.confirmDialog.callback) {
+                this.confirmDialog.callback();
+            }
+            this.confirmModal.hide();
+        },
+        isValueInRange() {
+            if (this.currentNode.node_type !== 'variable' || !this.currentNode.value) {
+                return false;
+            }
+
+            const value = this.currentNode.value;
+            const dataType = this.currentNode.data_type;
+
+            try {
+                switch(dataType) {
+                    case 'double':
+                    case 'float': {
+                        const num = parseFloat(value);
+                        if (isNaN(num)) return false;
+                        const range = this.valueRanges[dataType];
+                        return num >= range.min && num <= range.max;
+                    }
+                    case 'int32':
+                    case 'int64':
+                    case 'uint16':
+                    case 'uint32':
+                    case 'uint64': {
+                        let num;
+                        try {
+                            num = BigInt(value);
+                        } catch {
+                            this.formErrors.value = '请输入有效的整数';
+                            return false;
+                        }
+                        const range = this.valueRanges[dataType];
+                        return num >= range.min && num <= range.max;
+                    }
+                    case 'boolean':
+                        return ['true', 'false', '0', '1'].includes(value.toLowerCase());
+                    case 'datetime':
+                        return !isNaN(Date.parse(value));
+                    case 'array':
+                        try {
+                            JSON.parse(value);
+                            return true;
+                        } catch {
+                            return false;
+                        }
+                    case 'string':
+                        return true;  // 字符串类型没有范围限制
+                    default:
+                        return false;
+                }
+            } catch {
+                return false;
+            }
+        },
+        
+        validateValue() {
+            if (this.currentNode.node_type !== 'variable' || !this.currentNode.value) {
+                this.formErrors.value = '';
+                return;
+            }
+
+            const value = this.currentNode.value;
+            const dataType = this.currentNode.data_type;
+
+            try {
+                switch(dataType) {
+                    case 'double':
+                    case 'float': {
+                        const num = parseFloat(value);
+                        if (isNaN(num)) {
+                            this.formErrors.value = '请输入有效的数字';
+                            return;
+                        }
+                        const range = this.valueRanges[dataType];
+                        if (num < range.min || num > range.max) {
+                            this.formErrors.value = `数值必须在 ${range.min} 到 ${range.max} 之间`;
+                            return;
+                        }
+                        break;
+                    }
+                    case 'int32':
+                    case 'int64':
+                    case 'uint16':
+                    case 'uint32':
+                    case 'uint64': {
+                        let num;
+                        try {
+                            num = BigInt(value);
+                        } catch {
+                            this.formErrors.value = '请输入有效的整数';
+                            return;
+                        }
+                        const range = this.valueRanges[dataType];
+                        if (num < range.min || num > range.max) {
+                            this.formErrors.value = `数值必须在 ${range.min} 到 ${range.max} 之间`;
+                            return;
+                        }
+                        break;
+                    }
+                    case 'boolean':
+                        if (!['true', 'false', '0', '1'].includes(value.toLowerCase())) {
+                            this.formErrors.value = '请输入 true、false、1 或 0';
+                            return;
+                        }
+                        break;
+                    case 'datetime':
+                        if (isNaN(Date.parse(value))) {
+                            this.formErrors.value = '请输入有效的日期时间格式（如：2024-01-01T00:00:00）';
+                            return;
+                        }
+                        break;
+                    case 'array':
+                        try {
+                            JSON.parse(value);
+                        } catch {
+                            this.formErrors.value = '请输入有效的JSON数组格式（如：[1,2,3]）';
+                            return;
+                        }
+                        break;
+                }
+                this.formErrors.value = '';
+            } catch (e) {
+                this.formErrors.value = '值格式无效';
+            }
         }
     },
     mounted() {
         this.modal = new bootstrap.Modal(this.$refs.nodeModal)
+        this.confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'))
         this.loadNodes()
         this.startAutoRefresh()
+        
+        // 添加全局的toast容器
+        const toastContainer = document.createElement('div')
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3'
+        toastContainer.style.zIndex = '1050'
+        document.body.appendChild(toastContainer)
     },
     beforeUnmount() {
         this.stopAutoRefresh()
