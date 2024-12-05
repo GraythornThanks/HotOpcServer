@@ -6,9 +6,10 @@ urlpatterns = [
     path('', views.NodeListView.as_view(), name='node-list'),
     
     # 节点管理API
-    path('node/add/', views.NodeCreateView.as_view(), name='node-create'),
-    path('node/<int:pk>/edit/', views.NodeUpdateView.as_view(), name='node-update'),
-    path('node/<int:pk>/delete/', views.NodeDeleteView.as_view(), name='node-delete'),
+    path('node/list/', views.node_list, name='node-list-api'),
+    path('node/add/', views.add_node, name='node-add'),
+    path('node/<int:node_id>/edit/', views.edit_node, name='node-edit'),
+    path('node/<int:node_id>/delete/', views.delete_node, name='node-delete'),
     
     # 服务器控制
     path('server/start/', views.start_server, name='server-start'),
