@@ -145,7 +145,13 @@
                             <div class="invalid-feedback" v-if="nodeIdError">
                                 [[ nodeIdError ]]
                             </div>
-                            <small class="form-text text-muted">格式示例: ns=1;i=1000</small>
+                            <small class="form-text text-muted">
+                                支持的格式：<br>
+                                - 数字标识符：ns=1;i=1000<br>
+                                - 字符串标识符：ns=1;s=MyNode<br>
+                                - GUID标识符：ns=1;g=09087e75-8e5e-499b-954f-f2a9603db28a<br>
+                                - 二进制标识符：ns=1;b=SGVsbG8gV29ybGQ=
+                            </small>
                         </div>
                         <div class="mb-3" v-if="currentNode.node_type === 'variable'">
                             <label for="value" class="form-label">值</label>
@@ -405,7 +411,7 @@ const app = createApp({
                     case 'uint16':
                     case 'uint32':
                     case 'uint64':
-                        hint += '��数'
+                        hint += '数'
                         break
                     case 'boolean':
                         hint += 'true或false'
@@ -518,7 +524,7 @@ const app = createApp({
             }
         },
         async confirmDelete(node) {
-            if (confirm('确定要删除这个节点吗？')) {
+            if (confirm('确定要删除这个节点��？')) {
                 try {
                     const response = await fetch(`/node/${node.id}/delete/`, {
                         method: 'POST',
@@ -668,8 +674,51 @@ const app = createApp({
         },
         
         validateNodeId(nodeId) {
-            const pattern = /^ns=\d+;[is]=\d+$/;
-            return pattern.test(nodeId);
+            if (!nodeId) return false;
+            
+            // 基本格式检查：必须包含命名空间
+            if (!nodeId.startsWith('ns=')) {
+                return false;
+            }
+            
+            // 分解节点ID
+            const parts = nodeId.split(';');
+            if (parts.length !== 2) {
+                return false;
+            }
+            
+            // 检查命名空间部分
+            const nsMatch = parts[0].match(/^ns=(\d+)$/);
+            if (!nsMatch) {
+                return false;
+            }
+            
+            // 检查标识符部分
+            const idPart = parts[1];
+            
+            // 数字标识符：i=123
+            if (idPart.startsWith('i=')) {
+                return /^i=\d+$/.test(idPart);
+            }
+            
+            // 字符串标识符：s=MyNode
+            if (idPart.startsWith('s=')) {
+                return idPart.length > 2;  // 至少要有一个字符
+            }
+            
+            // GUID标识符：g=09087e75-8e5e-499b-954f-f2a9603db28a
+            if (idPart.startsWith('g=')) {
+                const guidPattern = /^g=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                return guidPattern.test(idPart);
+            }
+            
+            // 二进制标识符：b=SGVsbG8gV29ybGQ=
+            if (idPart.startsWith('b=')) {
+                const base64Pattern = /^b=[A-Za-z0-9+/]+=*$/;
+                return base64Pattern.test(idPart);
+            }
+            
+            return false;
         }
     },
     mounted() {
