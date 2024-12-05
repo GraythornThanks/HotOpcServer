@@ -8,6 +8,7 @@ import logging
 from django.conf import settings
 from django.db.models import Min
 from .models import OpcNode
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -45,53 +46,120 @@ class OpcUaServer:
     def start(self):
         """启动服务器"""
         if not self.running:
-            self.server.start()
-            self.running = True
-            self.stop_variation = False
-            self.nodes.clear()  # 清除旧的节点缓存
-            
-            # 从数据库重建所有节点
-            from .models import OpcNode
-            nodes = OpcNode.objects.all()
-            for node in nodes:
-                try:
-                    # 解析节点ID
-                    node_id = ua.NodeId.from_string(node.node_id)
+            try:
+                self.server.start()
+                self.running = True
+                self.stop_variation = False
+                self.nodes.clear()  # 清除旧的节点缓存
+                
+                # 从数据库重建所有节点
+                from .models import OpcNode
+                from django.db import transaction
+                
+                with transaction.atomic():
+                    nodes = OpcNode.objects.all()
+                    logger.info(f"Found {len(nodes)} nodes in database")
                     
-                    if node.node_type == 'variable':
-                        # 创建变量节点
-                        initial_value = convert_value(node.value, node.data_type) if node.value else 0
-                        
-                        # 根据节点ID类型设置正确的值
-                        if node_id.NodeIdType == ua.NodeIdType.Numeric:
-                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
-                        elif node_id.NodeIdType == ua.NodeIdType.String:
-                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
-                        elif node_id.NodeIdType == ua.NodeIdType.Guid:
-                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
-                        elif node_id.NodeIdType == ua.NodeIdType.ByteString:
-                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
-                        else:
-                            logger.error(f"Unsupported NodeId type for node {node.node_id}")
-                            continue
+                    for node in nodes:
+                        try:
+                            # 解析节点ID
+                            node_id = ua.NodeId.from_string(node.node_id)
+                            logger.info(f"Creating node: {node.node_id} ({node.name})")
                             
-                        var.set_writable()
-                        self.nodes[str(node_id)] = var
-                    else:
-                        # 创建对象节点
-                        obj = self.objects.add_object(node_id, node.name)
-                        self.nodes[str(node_id)] = obj
-                        
-                    logger.info(f"Rebuilt node from database: {node.node_id}")
-                except Exception as e:
-                    logger.error(f"Failed to rebuild node {node.node_id}: {str(e)}")
-            
-            # 启动变化值线程
-            self.variation_thread = threading.Thread(target=self._variation_loop)
-            self.variation_thread.daemon = True
-            self.variation_thread.start()
-            
-            logger.info("OPC UA Server started")
+                            if node.node_type == 'variable':
+                                # 创建变量节点
+                                initial_value = self._convert_value(node.value, node.data_type)
+                                var = self.objects.add_variable(
+                                    node_id,
+                                    node.name,
+                                    initial_value,
+                                    varianttype=self._get_ua_data_type(node.data_type)
+                                )
+                                var.set_writable()
+                                self.nodes[str(node_id)] = var
+                                logger.info(f"Created variable node: {node.node_id} with value {initial_value}")
+                            else:
+                                # 创建对象节点
+                                obj = self.objects.add_object(node_id, node.name)
+                                self.nodes[str(node_id)] = obj
+                                logger.info(f"Created object node: {node.node_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to create node {node.node_id}: {str(e)}")
+                
+                # 启动变化值线程
+                self.variation_thread = threading.Thread(target=self._variation_loop)
+                self.variation_thread.daemon = True
+                self.variation_thread.start()
+                
+                logger.info("OPC UA Server started successfully")
+            except Exception as e:
+                logger.error(f"Failed to start OPC UA server: {str(e)}")
+                self.running = False
+                raise
+    
+    def _convert_value(self, value, data_type):
+        """转换值到指定的数据类型"""
+        try:
+            if value is None:
+                return self._get_default_value(data_type)
+                
+            if data_type == 'array':
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    return []
+            elif data_type in ['double', 'float']:
+                return float(value)
+            elif data_type in ['int32', 'int64']:
+                return int(value)
+            elif data_type in ['uint16', 'uint32', 'uint64']:
+                val = int(value)
+                return max(0, val)  # 确保非负
+            elif data_type == 'boolean':
+                return str(value).lower() in ('true', '1', 'yes', 'on')
+            elif data_type == 'datetime':
+                return datetime.fromisoformat(value)
+            elif data_type == 'string':
+                return str(value)
+            else:
+                return value
+        except (ValueError, TypeError) as e:
+            logger.error(f'Error converting value {value} to type {data_type}: {str(e)}')
+            return self._get_default_value(data_type)
+    
+    def _get_default_value(self, data_type):
+        """获取数据类型的默认值"""
+        defaults = {
+            'double': 0.0,
+            'float': 0.0,
+            'int32': 0,
+            'int64': 0,
+            'uint16': 0,
+            'uint32': 0,
+            'uint64': 0,
+            'boolean': False,
+            'string': '',
+            'datetime': datetime.now(),
+            'array': [],
+        }
+        return defaults.get(data_type, None)
+    
+    def _get_ua_data_type(self, data_type):
+        """获取OPC UA数据类型"""
+        type_mapping = {
+            'double': ua.VariantType.Double,
+            'float': ua.VariantType.Float,
+            'int32': ua.VariantType.Int32,
+            'int64': ua.VariantType.Int64,
+            'uint16': ua.VariantType.UInt16,
+            'uint32': ua.VariantType.UInt32,
+            'uint64': ua.VariantType.UInt64,
+            'boolean': ua.VariantType.Boolean,
+            'string': ua.VariantType.String,
+            'datetime': ua.VariantType.DateTime,
+            'array': ua.VariantType.Double,  # 默认使用Double类型数组
+        }
+        return type_mapping.get(data_type, ua.VariantType.String)
 
     def stop(self):
         """停止服务器"""
@@ -298,23 +366,6 @@ class OpcUaServer:
             except Exception as e:
                 logger.error(f"Error in variation loop: {str(e)}")
                 time.sleep(1.0)  # 发生错误时等待1秒
-
-    def _get_ua_data_type(self, data_type):
-        """获取OPC UA数据类型"""
-        type_mapping = {
-            'double': ua.VariantType.Double,
-            'float': ua.VariantType.Float,
-            'int32': ua.VariantType.Int32,
-            'int64': ua.VariantType.Int64,
-            'uint16': ua.VariantType.UInt16,
-            'uint32': ua.VariantType.UInt32,
-            'uint64': ua.VariantType.UInt64,
-            'boolean': ua.VariantType.Boolean,
-            'string': ua.VariantType.String,
-            'datetime': ua.VariantType.DateTime,
-            'bytestring': ua.VariantType.ByteString,
-        }
-        return type_mapping.get(data_type, ua.VariantType.String)
 
     def is_running(self):
         """检查服务器是否运行"""
