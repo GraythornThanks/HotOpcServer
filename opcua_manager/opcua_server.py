@@ -55,22 +55,33 @@ class OpcUaServer:
             nodes = OpcNode.objects.all()
             for node in nodes:
                 try:
+                    # 解析节点ID
                     node_id = ua.NodeId.from_string(node.node_id)
+                    
                     if node.node_type == 'variable':
                         # 创建变量节点
                         initial_value = convert_value(node.value, node.data_type) if node.value else 0
-                        var = self.objects.add_variable(
-                            node_id,
-                            node.name,
-                            initial_value,
-                            varianttype=get_ua_data_type(node.data_type)
-                        )
+                        
+                        # 根据节点ID类型设置正确的值
+                        if node_id.NodeIdType == ua.NodeIdType.Numeric:
+                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
+                        elif node_id.NodeIdType == ua.NodeIdType.String:
+                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
+                        elif node_id.NodeIdType == ua.NodeIdType.Guid:
+                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
+                        elif node_id.NodeIdType == ua.NodeIdType.ByteString:
+                            var = self.objects.add_variable(node_id, node.name, initial_value, varianttype=get_ua_data_type(node.data_type))
+                        else:
+                            logger.error(f"Unsupported NodeId type for node {node.node_id}")
+                            continue
+                            
                         var.set_writable()
                         self.nodes[str(node_id)] = var
                     else:
                         # 创建对象节点
                         obj = self.objects.add_object(node_id, node.name)
                         self.nodes[str(node_id)] = obj
+                        
                     logger.info(f"Rebuilt node from database: {node.node_id}")
                 except Exception as e:
                     logger.error(f"Failed to rebuild node {node.node_id}: {str(e)}")

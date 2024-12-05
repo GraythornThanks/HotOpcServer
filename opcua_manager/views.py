@@ -12,6 +12,7 @@ from datetime import datetime
 from .models import OpcNode
 from .opcua_server import OpcUaServer
 from opcua import ua
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,65 @@ def node_list(request):
             'error': f'获取节点列表失败: {str(e)}'
         })
 
+def validate_node_id(node_id):
+    """验证节点ID格式"""
+    try:
+        # 基本格式检查
+        if not isinstance(node_id, str):
+            return False, "节点ID必须是字符串"
+            
+        if not node_id.startswith('ns='):
+            return False, "节点ID必须以'ns='开头"
+            
+        # 分解节点ID
+        parts = node_id.split(';')
+        if len(parts) != 2:
+            return False, "节点ID格式无效，必须包含一个分号"
+            
+        # 检查命名空间部分
+        ns_match = re.match(r'^ns=(\d+)$', parts[0])
+        if not ns_match:
+            return False, "命名空间格式无效，必须是数字"
+            
+        # 检查标识符部分
+        id_part = parts[1]
+        
+        # 数字标识符：i=123
+        if id_part.startswith('i='):
+            if not re.match(r'^i=\d+$', id_part):
+                return False, "数字标识符格式无效，必须是数字"
+        
+        # 字符串标识符：s=MyNode
+        elif id_part.startswith('s='):
+            if len(id_part) <= 2:
+                return False, "字符串标识符不能为空"
+        
+        # GUID标识符：g=09087e75-8e5e-499b-954f-f2a9603db28a
+        elif id_part.startswith('g='):
+            guid_pattern = r'^g=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            if not re.match(guid_pattern, id_part, re.I):
+                return False, "GUID标识符格式无效"
+        
+        # 二进制标识符：b=SGVsbG8gV29ybGQ=
+        elif id_part.startswith('b='):
+            base64_pattern = r'^b=[A-Za-z0-9+/]+=*$'
+            if not re.match(base64_pattern, id_part):
+                return False, "二进制标识符必须是有效的Base64编码"
+        
+        else:
+            return False, "不支持的标识符类型，必须是i=、s=、g=或b="
+        
+        # 尝试创建NodeId对象验证格式
+        try:
+            ua.NodeId.from_string(node_id)
+        except Exception as e:
+            return False, f"节点ID格式无效: {str(e)}"
+            
+        return True, None
+        
+    except Exception as e:
+        return False, f"节点ID验证失败: {str(e)}"
+
 @csrf_exempt
 def add_node(request):
     """添加节点"""
@@ -104,6 +164,15 @@ def add_node(request):
     try:
         data = json.loads(request.body)
         logger.info(f"Adding node with data: {data}")
+        
+        # 验证节点ID格式
+        is_valid, error_msg = validate_node_id(data.get('node_id'))
+        if not is_valid:
+            logger.error(f"Invalid node ID format: {error_msg}")
+            return JsonResponse({
+                'success': False,
+                'error': error_msg
+            })
         
         # 检查节点ID是否已存在
         if OpcNode.objects.filter(node_id=data['node_id']).exists():
