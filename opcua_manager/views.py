@@ -1,414 +1,555 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib import messages
-from django.views.generic import ListView
-from django.urls import reverse_lazy
+from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
+from django.views.generic import TemplateView
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
+from django.views.decorators.http import require_http_methods
+from django.core.exceptions import ValidationError
 from django.db import transaction
-import json
-import logging
-from datetime import datetime
-from .models import OpcNode
+from .models import OpcServer, Node
 from .opcua_server import OpcUaServer
-from opcua import ua
-import re
+import asyncio
+import socket
+import json
+from datetime import datetime
+import logging
 
 logger = logging.getLogger(__name__)
 
-class NodeListView(ListView):
-    """节点列表视图"""
-    model = OpcNode
+class NodeListView(TemplateView):
     template_name = 'opcua_manager/node_list.html'
-    context_object_name = 'nodes'
 
-def node_list(request):
-    """获取节点列表API"""
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['servers'] = OpcServer.objects.all()
+        return context
+
+# 服务器管理API
+@require_http_methods(["GET"])
+def server_list(request):
+    """获取所有服务器列表"""
+    servers = OpcServer.objects.all()
+    server_list = []
+    for server in servers:
+        server_list.append({
+            'id': server.id,
+            'name': server.name,
+            'endpoint': server.endpoint,
+            'port': server.port,
+            'uri': server.uri,
+            'allow_anonymous': server.allow_anonymous,
+            'username': server.username,
+            'min_sampling_interval': server.min_sampling_interval,
+            'is_running': server.is_running,
+            'node_count': server.nodes.count(),
+            'created_at': server.created_at.isoformat(),
+            'updated_at': server.updated_at.isoformat()
+        })
+    return JsonResponse({'success': True, 'servers': server_list})
+
+@require_http_methods(["POST"])
+def add_server(request):
+    """添加新服务器"""
     try:
-        nodes = OpcNode.objects.all()
-        server = OpcUaServer()
-        node_data = []
+        data = json.loads(request.body)
         
-        # 检查服务器是否运行
-        if not server.is_running():
-            logger.warning("OPC UA Server is not running")
-            # 返回数据库中的值
-            for node in nodes:
-                node_data.append({
-                    'id': node.id,
-                    'name': node.name,
-                    'node_type': node.node_type,
-                    'node_id': node.node_id,
-                    'data_type': node.data_type,
-                    'value': node.value,
-                    'description': node.description,
-                    'variation_type': node.variation_type,
-                    'variation_interval': node.variation_interval,
-                    'variation_min': node.variation_min,
-                    'variation_max': node.variation_max,
-                    'variation_step': node.variation_step,
-                    'variation_values': node.variation_values,
-                    'variation_direction': node.variation_direction,
-                    'variation_cycle': node.variation_cycle,
-                    'decimal_places': node.decimal_places
-                })
+        # 检查服务器名称是否重复
+        if OpcServer.objects.filter(name=data['name']).exists():
+            return JsonResponse({
+                'success': False,
+                'error': '服务器名称已存在'
+            })
+        
+        # 检查终端点和端口组合是否已存在
+        if OpcServer.objects.filter(endpoint=data['endpoint'], port=data['port']).exists():
+            return JsonResponse({
+                'success': False,
+                'error': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
+            })
+        
+        server = OpcServer.objects.create(
+            name=data['name'],
+            endpoint=data['endpoint'],
+            port=data['port'],
+            uri=data['uri'],
+            allow_anonymous=data.get('allow_anonymous', True),
+            username=data.get('username', ''),
+            password=data.get('password', ''),
+            min_sampling_interval=data.get('min_sampling_interval', 100)
+        )
+        return JsonResponse({
+            'success': True,
+            'server': {
+                'id': server.id,
+                'name': server.name,
+                'is_running': server.is_running
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def edit_server(request, server_id):
+    """编辑服务器配置"""
+    try:
+        server = get_object_or_404(OpcServer, id=server_id)
+        data = json.loads(request.body)
+        
+        # 检查服务器名称是否重复（排除当前服务器）
+        if OpcServer.objects.filter(name=data['name']).exclude(id=server_id).exists():
+            return JsonResponse({
+                'success': False,
+                'error': '服务器名称已存在'
+            })
+        
+        # 检查终端点和端口组合是否已存在（排除当前服务器）
+        if OpcServer.objects.filter(
+            endpoint=data['endpoint'], 
+            port=data['port']
+        ).exclude(id=server_id).exists():
+            return JsonResponse({
+                'success': False,
+                'error': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
+            })
+        
+        # 更新基本信息
+        server.name = data['name']
+        server.endpoint = data['endpoint']
+        server.port = data['port']
+        server.uri = data['uri']
+        server.allow_anonymous = data.get('allow_anonymous', True)
+        server.min_sampling_interval = data.get('min_sampling_interval', 100)
+        
+        # 如果不允许匿名访问，更新认证信息
+        if not data.get('allow_anonymous', True):
+            server.username = data.get('username', '')
+            if 'password' in data and data['password']:
+                server.password = data['password']
+        
+        server.save()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def delete_server(request, server_id):
+    """删除服务器"""
+    try:
+        server = get_object_or_404(OpcServer, id=server_id)
+        if server.is_running:
+            return JsonResponse({
+                'success': False,
+                'error': '无法删除��行中的服务器，请先停止服务器'
+            })
+        server.delete()
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def start_server(request, server_id):
+    """启动服务器"""
+    try:
+        server = get_object_or_404(OpcServer, id=server_id)
+        if server.is_running:
+            return JsonResponse({
+                'success': False,
+                'error': '服务器已经在运行'
+            })
+        
+        # 创建OPC UA服务器实例并启动
+        opcua_server = OpcUaServer.create_instance(server)
+        if opcua_server.start():
+            server.is_running = True
+            server.save()
+            return JsonResponse({'success': True})
         else:
-            # 服务器运行中，尝试获取实时值
-            for node in nodes:
-                # 如果是变量节点，尝试从OPC UA服务器获取最新值
-                current_value = node.value
-                if node.node_type == 'variable':
-                    try:
-                        ua_node = server.get_node(ua.NodeId.from_string(node.node_id))
-                        if ua_node and ua_node.get_browse_name():  # 确保节点存在且���效
-                            current_value = str(ua_node.get_value())
-                            # 更新数据库中的值
-                            if current_value != node.value:
-                                node.value = current_value
-                                node.save(update_fields=['value'])
-                        else:
-                            logger.warning(f"Node {node.node_id} does not exist in OPC UA server")
-                    except Exception as e:
-                        logger.warning(f'Failed to get value from OPC UA server for node {node.node_id}: {str(e)}')
-                
-                node_data.append({
-                    'id': node.id,
-                    'name': node.name,
-                    'node_type': node.node_type,
-                    'node_id': node.node_id,
-                    'data_type': node.data_type,
-                    'value': current_value,
-                    'description': node.description,
-                    'variation_type': node.variation_type,
-                    'variation_interval': node.variation_interval,
-                    'variation_min': node.variation_min,
-                    'variation_max': node.variation_max,
-                    'variation_step': node.variation_step,
-                    'variation_values': node.variation_values,
-                    'variation_direction': node.variation_direction,
-                    'variation_cycle': node.variation_cycle,
-                    'decimal_places': node.decimal_places
-                })
+            return JsonResponse({
+                'success': False,
+                'error': '服务器启动失败'
+            })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def stop_server(request, server_id):
+    """停止服务器"""
+    try:
+        server = get_object_or_404(OpcServer, id=server_id)
+        if not server.is_running:
+            return JsonResponse({
+                'success': False,
+                'error': '服务器已经停止'
+            })
+        
+        # 停止OPC UA服务器
+        opcua_server = OpcUaServer.get_instance(server.id)
+        if opcua_server and opcua_server.stop():
+            server.is_running = False
+            server.save()
+            return JsonResponse({'success': True})
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': '服务器停止失败'
+            })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["GET"])
+def server_status(request, server_id):
+    """获取服务器状态"""
+    try:
+        server = get_object_or_404(OpcServer, id=server_id)
+        return JsonResponse({
+            'success': True,
+            'is_running': server.is_running,
+            'node_count': server.nodes.count()
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+# 新增的服务器管理API
+@require_http_methods(["POST"])
+def test_server_connection(request):
+    """测试服务器连接"""
+    try:
+        data = json.loads(request.body)
+        mode = data.get('mode', 'add')  # 获取操作模式
+        original_id = data.get('original_id')  # 获取原始服务器ID
+
+        # 验证URI格式
+        if not data['uri'].startswith('urn:'):
+            return JsonResponse({
+                'success': False,
+                'message': 'URI必须以"urn:"开头'
+            })
+        
+        # 检查服务器名称是否重复
+        existing_server = OpcServer.objects.filter(name=data['name'])
+        if mode == 'edit':
+            # 编辑模式：排除当前服务器
+            existing_server = existing_server.exclude(id=original_id)
+        
+        if existing_server.exists():
+            return JsonResponse({
+                'success': False,
+                'message': '服务器名称已存在'
+            })
+
+        # 检查终端点和端口组合是否已存在
+        existing_endpoint = OpcServer.objects.filter(
+            endpoint=data['endpoint'],
+            port=data['port']
+        )
+        if mode == 'edit':
+            # 编辑模式：排除当前服务器
+            existing_endpoint = existing_endpoint.exclude(id=original_id)
+        
+        if existing_endpoint.exists():
+            return JsonResponse({
+                'success': False,
+                'message': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
+            })
+
+        # 测试端口是否可用（仅在端口和终端点组合不存在时测试）
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((data['endpoint'], int(data['port'])))
+        sock.close()
+        
+        if result == 0:
+            return JsonResponse({
+                'success': False,
+                'message': f'端口 {data["port"]} 已被占用，请使用其他端口'
+            })
+        
+        success_message = '连接测试成功，可以创建服务器' if mode == 'add' else '接测试成功，可以更新服务器配置'
+        return JsonResponse({
+            'success': True,
+            'message': success_message
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'连接测试失败: {str(e)}'
+        })
+
+@require_http_methods(["POST"])
+def import_servers(request):
+    """导入服务器配置"""
+    try:
+        data = json.loads(request.body)
+        servers = data['servers']
+        options = data['options']
+        
+        with transaction.atomic():
+            for server_data in servers:
+                if options.get('overwrite') and OpcServer.objects.filter(name=server_data['name']).exists():
+                    # 如果选择覆盖，则更新现有服务器
+                    server = OpcServer.objects.get(name=server_data['name'])
+                    for key, value in server_data.items():
+                        if key not in ['id', 'created_at', 'updated_at', 'is_running']:
+                            setattr(server, key, value)
+                    server.save()
+                else:
+                    # 创建新服务器
+                    server_data.pop('id', None)
+                    server_data.pop('created_at', None)
+                    server_data.pop('updated_at', None)
+                    server_data.pop('is_running', None)
+                    OpcServer.objects.create(**server_data)
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["GET"])
+def export_servers(request):
+    """导出服务器配置"""
+    try:
+        servers = OpcServer.objects.all()
+        config = []
+        for server in servers:
+            server_data = {
+                'id': server.id,
+                'name': server.name,
+                'endpoint': server.endpoint,
+                'port': server.port,
+                'uri': server.uri,
+                'allow_anonymous': server.allow_anonymous,
+                'username': server.username,
+                'password': server.password,
+                'min_sampling_interval': server.min_sampling_interval,
+                'created_at': server.created_at.isoformat(),
+                'updated_at': server.updated_at.isoformat()
+            }
+            config.append(server_data)
         
         return JsonResponse({
             'success': True,
-            'nodes': node_data,
-            'server_running': server.is_running()
+            'config': config
         })
     except Exception as e:
-        logger.error(f'Error getting node list: {str(e)}')
-        return JsonResponse({
-            'success': False,
-            'error': f'获取节点列表失败: {str(e)}'
-        })
+        return JsonResponse({'success': False, 'error': str(e)})
 
-def validate_node_id(node_id):
-    """验证节点ID格式"""
-    try:
-        # 基本格式检查
-        if not isinstance(node_id, str):
-            return False, "节点ID必须是字符串"
-            
-        if not node_id.startswith('ns='):
-            return False, "节点ID必须以'ns='开头"
-            
-        # 分解节点ID
-        parts = node_id.split(';')
-        if len(parts) != 2:
-            return False, "节点ID格式无效，必须包含一个分号"
-            
-        # 检查命名空间部分
-        ns_match = re.match(r'^ns=(\d+)$', parts[0])
-        if not ns_match:
-            return False, "命名空间格式无效，必须是数字"
-            
-        # 检查标识符部分
-        id_part = parts[1]
-        
-        # 数字标识符：i=123
-        if id_part.startswith('i='):
-            if not re.match(r'^i=\d+$', id_part):
-                return False, "数字标识符格式无效，必须是数字"
-        
-        # 字符串标识符：s=MyNode
-        elif id_part.startswith('s='):
-            if len(id_part) <= 2:
-                return False, "字符串标识符不能为空"
-        
-        # GUID标识符：g=09087e75-8e5e-499b-954f-f2a9603db28a
-        elif id_part.startswith('g='):
-            guid_pattern = r'^g=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-            if not re.match(guid_pattern, id_part, re.I):
-                return False, "GUID标识符格式无效"
-        
-        # 二进制标识符：b=SGVsbG8gV29ybGQ=
-        elif id_part.startswith('b='):
-            base64_pattern = r'^b=[A-Za-z0-9+/]+=*$'
-            if not re.match(base64_pattern, id_part):
-                return False, "二进制标识符必须是有效的Base64编码"
-        
-        else:
-            return False, "不支持的标识符类型，必须是i=、s=、g=或b="
-        
-        # 尝试创建NodeId对象验证格式
-        try:
-            ua.NodeId.from_string(node_id)
-        except Exception as e:
-            return False, f"节点ID格式无效: {str(e)}"
-            
-        return True, None
-        
-    except Exception as e:
-        return False, f"节点ID验证失败: {str(e)}"
-
-@csrf_exempt
-def add_node(request):
-    """添加节点"""
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': '不支持的请求方法'})
-    
+@require_http_methods(["POST"])
+def batch_start_servers(request):
+    """批量启动服务器"""
     try:
         data = json.loads(request.body)
-        logger.info(f"Adding node with data: {data}")
+        server_ids = data.get('server_ids', [])
         
-        # 验证节点ID格式
-        is_valid, error_msg = validate_node_id(data.get('node_id'))
-        if not is_valid:
-            logger.error(f"Invalid node ID format: {error_msg}")
-            return JsonResponse({
-                'success': False,
-                'error': error_msg
-            })
+        success_count = 0
+        errors = []
         
-        # 检查节点ID是否已存在
-        if OpcNode.objects.filter(node_id=data['node_id']).exists():
-            error_msg = f"节点ID {data['node_id']} 已存在，不允许重复创建"
-            logger.error(error_msg)
-            return JsonResponse({
-                'success': False,
-                'error': error_msg
-            })
+        for server_id in server_ids:
+            try:
+                server = OpcServer.objects.get(id=server_id)
+                if not server.is_running:
+                    opcua_server = OpcUaServer(server)
+                    asyncio.run(opcua_server.start())
+                    server.is_running = True
+                    server.save()
+                    success_count += 1
+            except Exception as e:
+                errors.append(f'服务器 {server_id} 启动失败: {str(e)}')
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'成功启动 {success_count} 个服务器',
+            'errors': errors
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def batch_stop_servers(request):
+    """批量停止服务器"""
+    try:
+        data = json.loads(request.body)
+        server_ids = data.get('server_ids', [])
+        
+        success_count = 0
+        errors = []
+        
+        for server_id in server_ids:
+            try:
+                server = OpcServer.objects.get(id=server_id)
+                if server.is_running:
+                    opcua_server = OpcUaServer(server)
+                    asyncio.run(opcua_server.stop())
+                    server.is_running = False
+                    server.save()
+                    success_count += 1
+            except Exception as e:
+                errors.append(f'服务器 {server_id} 停止失败: {str(e)}')
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'成功停止 {success_count} 个服务器',
+            'errors': errors
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@require_http_methods(["POST"])
+def batch_delete_servers(request):
+    """批量删除服务器"""
+    try:
+        data = json.loads(request.body)
+        server_ids = data.get('server_ids', [])
+        
+        success_count = 0
+        errors = []
         
         with transaction.atomic():
-            # 只在数据库中创建节点记录
-            node = OpcNode.objects.create(
-                name=data['name'],
-                node_type=data['node_type'],
-                node_id=data['node_id'],
-                data_type=data.get('data_type', 'double'),
-                value=data.get('value'),
-                description=data.get('description'),
-                variation_type=data.get('variation_type', 'none'),
-                variation_interval=int(data.get('variation_interval', 1000)),
-                variation_min=float(data['variation_min']) if data.get('variation_min') else None,
-                variation_max=float(data['variation_max']) if data.get('variation_max') else None,
-                variation_step=float(data['variation_step']) if data.get('variation_step') else None,
-                variation_values=data.get('variation_values')
-            )
+            for server_id in server_ids:
+                try:
+                    server = OpcServer.objects.get(id=server_id)
+                    if not server.is_running:
+                        server.delete()
+                        success_count += 1
+                    else:
+                        errors.append(f'服务器 {server.name} 正��运行，无法删除')
+                except Exception as e:
+                    errors.append(f'服务器 {server_id} 删除失败: {str(e)}')
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'成功删除 {success_count} 个服务器',
+            'errors': errors
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def node_list(request):
+    """获取节点列表"""
+    if request.method == 'GET':
+        server_id = request.GET.get('server_id')
+        try:
+            if server_id:
+                server = OpcServer.objects.get(id=server_id)
+                nodes = server.nodes.all()
+            else:
+                nodes = Node.objects.all()
             
             return JsonResponse({
                 'success': True,
-                'data': {
+                'nodes': [{
                     'id': node.id,
                     'name': node.name,
-                    'node_type': node.node_type,
                     'node_id': node.node_id,
+                    'node_type': node.node_type,
                     'data_type': node.data_type,
                     'value': node.value,
                     'description': node.description,
                     'variation_type': node.variation_type,
-                    'variation_interval': node.variation_interval,
-                    'variation_min': node.variation_min,
-                    'variation_max': node.variation_max,
-                    'variation_step': node.variation_step,
-                    'variation_values': node.variation_values
+                    'server_id': node.server_id,
+                    'server_name': node.server.name
+                } for node in nodes]
+            })
+        except Exception as e:
+            logger.error(f"Error getting node list: {e}")
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': '不支持的请求方法'})
+
+@csrf_exempt
+def add_node(request):
+    """添加新节点"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            server = OpcServer.objects.get(id=data['server_id'])
+            
+            node = Node.objects.create(
+                server=server,
+                name=data['name'],
+                node_id=data['node_id'],
+                node_type=data['node_type'],
+                data_type=data['data_type'],
+                value=data.get('value'),
+                description=data.get('description'),
+                variation_type=data.get('variation_type', 'none'),
+                variation_interval=data.get('variation_interval', 1000),
+                variation_min=data.get('variation_min'),
+                variation_max=data.get('variation_max'),
+                variation_step=data.get('variation_step'),
+                variation_values=data.get('variation_values'),
+                decimal_places=data.get('decimal_places', 2)
+            )
+            
+            # 如果服务器正在运行，添加点到服务器实例
+            if server.is_running:
+                server_instance = OpcUaServer.get_instance(server.id)
+                if server_instance:
+                    server_instance.add_node(node)
+            
+            return JsonResponse({
+                'success': True,
+                'node': {
+                    'id': node.id,
+                    'name': node.name,
+                    'node_id': node.node_id
                 }
             })
-    except Exception as e:
-        logger.error(f'Error adding node: {str(e)}')
-        return JsonResponse({
-            'success': False,
-            'error': f'添加节点失败: {str(e)}'
-        })
+        except OpcServer.DoesNotExist:
+            return JsonResponse({'success': False, 'error': '服务器不存在'})
+        except Exception as e:
+            logger.error(f"Error adding node: {e}")
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': '不支持的请求方法'})
 
 @csrf_exempt
 def edit_node(request, node_id):
     """编辑节点"""
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': '不支持的请求方法'})
-    
-    try:
-        data = json.loads(request.body)
-        logger.info(f"Editing node {node_id} with data: {data}")
-        
-        with transaction.atomic():
-            node = get_object_or_404(OpcNode, id=node_id)
+    if request.method == 'POST':
+        try:
+            node = Node.objects.get(id=node_id)
+            data = json.loads(request.body)
             
-            # 更新基本信息
-            node.name = data.get('name', node.name)
-            node.description = data.get('description', node.description)
+            # 更新节点配置
+            for field in ['name', 'node_id', 'node_type', 'data_type', 'value', 
+                         'description', 'variation_type', 'variation_interval',
+                         'variation_min', 'variation_max', 'variation_step',
+                         'variation_values', 'decimal_places']:
+                if field in data:
+                    setattr(node, field, data[field])
             
-            # 更新变化配置
-            variation_type = data.get('variation_type')
-            if variation_type is not None:
-                logger.info(f"Updating variation type to: {variation_type}")
-                node.variation_type = variation_type
-                node.variation_interval = int(data.get('variation_interval', 1000))
-                
-                # 处理小数位数设置
-                decimal_places = data.get('decimal_places')
-                if decimal_places is not None:
-                    decimal_places = max(0, min(10, int(decimal_places)))  # 限制在0-10之间
-                    node.decimal_places = decimal_places
-                
-                if variation_type in ['random', 'linear', 'cycle']:
-                    try:
-                        if 'variation_min' in data:
-                            node.variation_min = float(data['variation_min'])
-                        if 'variation_max' in data:
-                            node.variation_max = float(data['variation_max'])
-                        if variation_type in ['linear', 'cycle'] and 'variation_step' in data:
-                            node.variation_step = float(data['variation_step'])
-                    except (TypeError, ValueError) as e:
-                        raise ValueError(f'变化配置参数无效: {str(e)}')
-                elif variation_type == 'discrete':
-                    if 'variation_values' in data:
-                        try:
-                            values = json.loads(data['variation_values'])
-                            if not isinstance(values, list):
-                                raise ValueError('离散值必须是数组格式')
-                            node.variation_values = data['variation_values']
-                        except json.JSONDecodeError:
-                            raise ValueError('离散值必须是有效的JSON数组格式')
-                elif variation_type == 'none':
-                    node.variation_min = None
-                    node.variation_max = None
-                    node.variation_step = None
-                    node.variation_values = None
-            
-            # 处理节点值
-            value = data.get('value')
-            if node.node_type == 'variable' and value is not None:
-                try:
-                    typed_value = convert_value(value, node.data_type)
-                    if typed_value is None:
-                        raise ValueError('无效的值格式')
-                    node.value = value
-                except ValueError as e:
-                    raise ValueError(f'值格式错误: {str(e)}')
-            
-            # 保存所有更改
             node.save()
-            logger.info(f"Node {node_id} updated successfully with variation_type: {node.variation_type}")
             
-            return JsonResponse({
-                'success': True,
-                'data': {
-                    'id': node.id,
-                    'name': node.name,
-                    'node_type': node.node_type,
-                    'node_id': node.node_id,
-                    'data_type': node.data_type,
-                    'value': node.value,
-                    'description': node.description,
-                    'variation_type': node.variation_type,
-                    'variation_interval': node.variation_interval,
-                    'variation_min': node.variation_min,
-                    'variation_max': node.variation_max,
-                    'variation_step': node.variation_step,
-                    'variation_values': node.variation_values
-                }
-            })
-    except Exception as e:
-        logger.error(f'Error updating node {node_id}: {str(e)}')
-        return JsonResponse({
-            'success': False,
-            'error': f'更新失败: {str(e)}'
-        })
+            # 如果服务器正在运行，更新节点
+            if node.server.is_running:
+                server_instance = OpcUaServer.get_instance(node.server.id)
+                if server_instance:
+                    server_instance.remove_node(node.id)
+                    server_instance.add_node(node)
+            
+            return JsonResponse({'success': True})
+        except Node.DoesNotExist:
+            return JsonResponse({'success': False, 'error': '节点不存在'})
+        except Exception as e:
+            logger.error(f"Error editing node: {e}")
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': '不支持的请求方法'})
 
 @csrf_exempt
 def delete_node(request, node_id):
     """删除节点"""
-    if request.method != 'POST':
-        return JsonResponse({'success': False, 'error': '不支持请求方法'})
-    
-    try:
-        node = get_object_or_404(OpcNode, id=node_id)
-        # 只在数据库中删除节点
-        node.delete()
-        logger.info(f'Successfully deleted node {node_id} from database')
-        return JsonResponse({'success': True})
-    except Exception as e:
-        logger.error(f'Error deleting node {node_id}: {str(e)}')
-        return JsonResponse({
-            'success': False,
-            'error': f'删除节点失败: {str(e)}'
-        })
-
-def get_ua_data_type(data_type):
-    """获取OPC UA数据类型"""
-    type_mapping = {
-        'double': ua.VariantType.Double,
-        'float': ua.VariantType.Float,
-        'int32': ua.VariantType.Int32,
-        'int64': ua.VariantType.Int64,
-        'uint16': ua.VariantType.UInt16,
-        'uint32': ua.VariantType.UInt32,
-        'uint64': ua.VariantType.UInt64,
-        'boolean': ua.VariantType.Boolean,
-        'string': ua.VariantType.String,
-        'datetime': ua.VariantType.DateTime,
-        'bytestring': ua.VariantType.ByteString,
-    }
-    return type_mapping.get(data_type, ua.VariantType.String)
-
-def convert_value(value, data_type):
-    """转换值到指定的数据类型"""
-    try:
-        if not value:
-            return None
+    if request.method == 'POST':
+        try:
+            node = Node.objects.get(id=node_id)
             
-        if data_type == 'array':
-            try:
-                array_data = json.loads(value)
-                return array_data
-            except json.JSONDecodeError:
-                return None
-        elif data_type in ['double', 'float']:
-            return float(value)
-        elif data_type in ['int32', 'int64']:
-            return int(value)
-        elif data_type in ['uint16', 'uint32', 'uint64']:
-            val = int(value)
-            if val < 0:
-                raise ValueError('无符号整数不能为负数')
-            return val
-        elif data_type == 'boolean':
-            return value.lower() in ('true', '1', 'yes', 'on')
-        elif data_type == 'datetime':
-            return datetime.fromisoformat(value)
-        else:
-            return value
-    except (ValueError, TypeError) as e:
-        logger.error(f'Error converting value {value} to type {data_type}: {str(e)}')
-        return None
-
-def start_server(request):
-    """启动OPC UA服务器"""
-    try:
-        server = OpcUaServer()
-        server.start()
-        messages.success(request, 'OPC UA服务器已启动')
-    except Exception as e:
-        messages.error(request, f'启动服务器失败: {str(e)}')
-    return redirect('node-list')
-
-def stop_server(request):
-    """停止OPC UA服务器"""
-    try:
-        server = OpcUaServer()
-        server.stop()
-        messages.success(request, 'OPC UA服务器已停止')
-    except Exception as e:
-        messages.error(request, f'停止服务器失败: {str(e)}')
-    return redirect('node-list')
+            # 如果服务器正在运行，先从服务器实例中移除节点
+            if node.server.is_running:
+                server_instance = OpcUaServer.get_instance(node.server.id)
+                if server_instance:
+                    server_instance.remove_node(node.id)
+            
+            node.delete()
+            return JsonResponse({'success': True})
+        except Node.DoesNotExist:
+            return JsonResponse({'success': False, 'error': '节点不存在'})
+        except Exception as e:
+            logger.error(f"Error deleting node: {e}")
+            return JsonResponse({'success': False, 'error': str(e)})
+    return JsonResponse({'success': False, 'error': '不支持的请求方法'})

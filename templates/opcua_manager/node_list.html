@@ -1,10 +1,6 @@
 {% extends 'base.html' %}
-{% load static %}
-
-{% block title %}节点管理{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
     /* 主题颜色 */
     :root {
@@ -15,17 +11,163 @@
         --info-color: #0dcaf0;
         --light-bg: #f8f9fa;
         --border-color: #dee2e6;
-        --text-color: #495057;
-        --text-muted: #6c757d;
     }
 
-    /* 全局样式 */
-    body {
-        background-color: #f5f7fa;
+    /* 状态总览面板 */
+    .status-overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
     }
-    
-    [v-cloak] {
-        display: none;
+
+    .status-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+
+    .status-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .status-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+    }
+
+    .status-icon.running {
+        background-color: rgba(25, 135, 84, 0.1);
+        color: var(--success-color);
+    }
+
+    .status-icon.stopped {
+        background-color: rgba(220, 53, 69, 0.1);
+        color: var(--danger-color);
+    }
+
+    .status-icon.total {
+        background-color: rgba(13, 110, 253, 0.1);
+        color: var(--primary-color);
+    }
+
+    .status-icon.nodes {
+        background-color: rgba(13, 202, 240, 0.1);
+        color: var(--info-color);
+    }
+
+    .status-info {
+        flex: 1;
+    }
+
+    .status-label {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-bottom: 0.25rem;
+    }
+
+    .status-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0;
+    }
+
+    /* 服务器卡片样式 */
+    .server-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .server-card {
+        background: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .server-card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .server-card.active {
+        border-color: var(--primary-color);
+        background-color: rgba(13, 110, 253, 0.05);
+    }
+
+    .server-card .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .server-card .server-status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .server-card .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+    }
+
+    .server-card .status-indicator.running {
+        background-color: var(--success-color);
+    }
+
+    .server-card .status-indicator.stopped {
+        background-color: var(--danger-color);
+    }
+
+    .server-card .card-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .server-card .info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .server-card .card-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    /* 工具栏样式 */
+    .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background-color: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+    }
+
+    .toolbar .btn-group {
+        display: flex;
+        gap: 0.5rem;
     }
 
     /* 加载动画 */
@@ -42,563 +184,606 @@
         z-index: 1000;
     }
 
-    .loading-spinner {
-        width: 50px;
-        height: 50px;
-        border: 3px solid var(--border-color);
-        border-radius: 50%;
-        border-top-color: var(--primary-color);
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
     /* 表格样式 */
     .table-container {
         position: relative;
-        min-height: 200px;
+        background: white;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
     }
 
-    .table {
-        margin-bottom: 0;
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-
-    .table thead th {
+    .table th {
         background-color: var(--light-bg);
-        border-bottom: 2px solid var(--border-color);
-        color: var(--text-color);
         font-weight: 600;
-        padding: 1rem;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-    }
-
-    .table tbody tr {
-        transition: all 0.2s;
-    }
-
-    .table tbody tr:hover {
-        background-color: rgba(13, 110, 253, 0.04);
-        transform: scale(1.002);
-    }
-
-    .table td {
-        padding: 1rem;
-        vertical-align: middle;
-        border-bottom: 1px solid var(--border-color);
     }
 
     /* 空状态样式 */
     .empty-state {
         text-align: center;
-        padding: 3rem 1rem;
+        padding: 3rem;
         color: var(--text-muted);
     }
 
     .empty-state i {
         font-size: 3rem;
         margin-bottom: 1rem;
-        opacity: 0.5;
     }
 
-    .empty-state p {
-        font-size: 1.1rem;
-        margin-bottom: 0;
-    }
-
-    /* 工具栏样式 */
-    .toolbar {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    }
-
-    /* 按钮组样式 */
-    .action-buttons {
+    /* 批量操作工具栏 */
+    .batch-actions {
         display: flex;
-        gap: 0.75rem;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        align-items: center;
     }
 
-    .btn {
-        display: inline-flex;
+    .batch-actions .selected-count {
+        margin-right: auto;
+        font-weight: 500;
+        color: #6c757d;
+    }
+
+    /* 服务器高级选项 */
+    .advanced-options {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .advanced-options-toggle {
+        color: #6c757d;
+        text-decoration: none;
+        display: flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.6rem 1.2rem;
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.2s;
-        border: none;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 1rem;
     }
 
-    .btn:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    .advanced-options-toggle:hover {
+        color: var(--primary-color);
     }
 
-    .btn:active {
-        transform: translateY(0);
+    .advanced-options-toggle i {
+        transition: transform 0.3s;
     }
 
-    .btn i {
-        font-size: 1.1em;
+    .advanced-options-toggle.expanded i {
+        transform: rotate(180deg);
     }
 
-    /* 状态标签样式 */
-    .badge {
-        padding: 0.5em 1em;
-        border-radius: 6px;
-        font-weight: 500;
+    /* 服务器状态标签 */
+    .server-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
     }
 
-    .badge.bg-success {
-        background-color: rgba(25, 135, 84, 0.1) !important;
+    .server-status-badge.running {
+        background-color: rgba(25, 135, 84, 0.1);
         color: var(--success-color);
     }
 
-    .badge.bg-danger {
-        background-color: rgba(220, 53, 69, 0.1) !important;
+    .server-status-badge.stopped {
+        background-color: rgba(220, 53, 69, 0.1);
         color: var(--danger-color);
     }
 
-    /* 变化标记样式 */
-    .variation-badge {
-        background-color: rgba(13, 202, 240, 0.1);
-        color: var(--info-color);
-        padding: 0.4em 0.8em;
-        border-radius: 6px;
-        font-size: 0.875em;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.3rem;
-        cursor: help;
-    }
-
-    /* 重启提示样式 */
-    .restart-alert {
-        display: none;
-        background-color: #fff3cd;
-        border-left: 4px solid var(--warning-color);
-        border-radius: 8px;
-        padding: 1rem 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .restart-alert.show {
-        display: block;
-        animation: slideDown 0.3s ease-out;
-    }
-
-    @keyframes slideDown {
-        from {
-            transform: translateY(-20px);
-            opacity: 0;
-        }
-        to {
-            transform: translateY(0);
-            opacity: 1;
-        }
-    }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .toolbar {
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .action-buttons {
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .btn {
-            width: 100%;
-            justify-content: center;
-        }
-    }
-
-    /* 确认对话框样式 */
-    .confirm-modal .modal-content {
-        border: none;
-        border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-    }
-    
-    .confirm-modal .modal-header {
-        border: none;
-        padding: 1.5rem 1.5rem 0.5rem;
-    }
-    
-    .confirm-modal .modal-body {
-        padding: 1.5rem;
-        text-align: center;
-    }
-    
-    .confirm-modal .modal-footer {
-        border: none;
-        padding: 0.5rem 1.5rem 1.5rem;
-        justify-content: center;
-        gap: 1rem;
-    }
-    
-    .confirm-modal .modal-icon {
-        font-size: 3rem;
-        margin-bottom: 1rem;
-    }
-    
-    .confirm-modal .modal-icon.warning {
+    .server-status-badge.warning {
+        background-color: rgba(255, 193, 7, 0.1);
         color: var(--warning-color);
     }
-    
-    .confirm-modal .modal-icon.danger {
-        color: var(--danger-color);
-    }
-    
-    .confirm-modal .modal-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text-color);
-        margin-bottom: 0.5rem;
-    }
-    
-    .confirm-modal .modal-message {
-        color: var(--text-muted);
-        margin-bottom: 0;
-    }
-    
-    .confirm-modal .btn-confirm {
-        min-width: 100px;
-    }
-    
-    .confirm-modal .node-info {
-        background-color: var(--light-bg);
+
+    /* 服务器测试结果 */
+    .test-result {
+        margin-top: 1rem;
+        padding: 1rem;
         border-radius: 8px;
-        padding: 0.75rem 1rem;
-        margin: 1rem 0;
-        text-align: left;
-    }
-    
-    .confirm-modal .node-info .info-label {
-        font-weight: 500;
-        color: var(--text-muted);
-        font-size: 0.875rem;
-    }
-    
-    .confirm-modal .node-info .info-value {
-        color: var(--text-color);
-        margin-bottom: 0;
+        display: none;
     }
 
-    /* 表单验证样式 */
-    .form-control.is-invalid,
-    .form-select.is-invalid {
-        border-color: var(--danger-color);
-        box-shadow: none;
+    .test-result.success {
+        background-color: rgba(25, 135, 84, 0.1);
+        color: var(--success-color);
+        display: block;
     }
-    
-    .form-control.is-invalid:focus,
-    .form-select.is-invalid:focus {
-        border-color: var(--danger-color);
-        box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+
+    .test-result.error {
+        background-color: rgba(220, 53, 69, 0.1);
+        color: var(--danger-color);
+        display: block;
     }
-    
-    .invalid-feedback {
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-    }
-    
-    .form-text.text-help {
-        font-size: 0.875rem;
-        color: var(--text-muted);
-        margin-top: 0.25rem;
-    }
-    
-    .form-text.text-range {
+
+    /* 导入/导出按钮 */
+    .import-export-buttons {
         display: flex;
-        justify-content: space-between;
-        color: var(--text-muted);
-        font-size: 0.75rem;
-        margin-top: 0.25rem;
+        gap: 0.5rem;
+    }
+
+    .import-export-buttons .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* Toast 通知样式 */
+    .toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+    }
+
+    .toast {
+        min-width: 250px;
+        margin-bottom: 10px;
+        background-color: white;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out;
+    }
+
+    .toast.show {
+        opacity: 1;
+    }
+
+    .toast.success {
+        border-left: 4px solid var(--success-color);
+    }
+
+    .toast.error {
+        border-left: 4px solid var(--danger-color);
+    }
+
+    .toast-header {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        background-color: rgba(255, 255, 255, 0.85);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .toast-body {
+        padding: 0.75rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-{% csrf_token %}
 <div id="app" v-cloak>
-    <div class="container mt-4">
-        <!-- 重启提示 -->
-        <div class="restart-alert" :class="{ show: needsRestart }">
-            <div class="d-flex align-items-center">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                <span>您已修改了节点配置，需要重启服务器才能生效。</span>
+    <!-- Toast 通知容器 -->
+    <div class="toast-container">
+        <div v-for="(toast, index) in toasts" :key="index"
+             class="toast" :class="[toast.type, { show: toast.show }]">
+            <div class="toast-header">
+                <i class="bi me-2" :class="toast.type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'"></i>
+                <strong class="me-auto">${ toast.type === 'success' ? '成功' : '错误' }</strong>
+                <button type="button" class="btn-close" @click="removeToast(index)"></button>
             </div>
-        </div>
-
-        <!-- 工具栏 -->
-        <div class="toolbar d-flex justify-content-between align-items-center">
-            <div class="d-flex align-items-center gap-3">
-                <h2 class="mb-0">OPC UA节点管理</h2>
-                <span :class="serverStatusClass">
-                    <i class="bi" :class="serverRunning ? 'bi-play-fill' : 'bi-stop-fill'"></i>
-                    [[ serverStatus ]]
-                </span>
-            </div>
-            <div class="action-buttons">
-                <button class="btn btn-primary" @click="showAddNodeModal">
-                    <i class="bi bi-plus-lg"></i>
-                    添加节点
-                </button>
-                <button class="btn btn-info" @click="showBatchAddModal">
-                    <i class="bi bi-collection"></i>
-                    批量添加
-                </button>
-                <button class="btn btn-secondary" @click="showServerConfigModal">
-                    <i class="bi bi-gear"></i>
-                    服务器配置
-                </button>
-                <a href="{% url 'server-start' %}" class="btn btn-success" :class="{ disabled: serverRunning }">
-                    <i class="bi bi-play-fill"></i>
-                    启动服务器
-                </a>
-                <button class="btn btn-warning" @click="restartServer" :disabled="isRestarting || !serverRunning">
-                    <i class="bi bi-arrow-clockwise"></i>
-                    [[ isRestarting ? '重启中' : '重启服务器' ]]
-                </button>
-                <a href="{% url 'server-stop' %}" class="btn btn-danger" :class="{ disabled: !serverRunning }">
-                    <i class="bi bi-stop-fill"></i>
-                    停止服务器
-                </a>
-            </div>
-        </div>
-
-        <!-- 节点列表 -->
-        <div class="card">
-            <div class="card-body p-0">
-                <div class="table-container">
-                    <!-- 加载动画 -->
-                    <div class="loading-overlay" v-if="isLoading">
-                        <div class="loading-spinner"></div>
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>名称</th>
-                                    <th>节点类型</th>
-                                    <th>数据类型</th>
-                                    <th>节点ID</th>
-                                    <th></th>
-                                    <th>描述</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="node in nodes" :key="node.id">
-                                    <td>[[ node.name ]]</td>
-                                    <td>[[ getNodeTypeDisplay(node.node_type) ]]</td>
-                                    <td>[[ getDataTypeDisplay(node.data_type) ]]</td>
-                                    <td>[[ node.node_id ]]</td>
-                                    <td>[[ node.value || '-' ]]</td>
-                                    <td>[[ node.description || '-' ]]</td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn btn-info btn-sm" @click="editNode(node)">
-                                                <i class="bi bi-pencil"></i>
-                                                编辑
-                                            </button>
-                                            <button class="btn btn-danger btn-sm" @click="confirmDelete(node)">
-                                                <i class="bi bi-trash"></i>
-                                                删除
-                                            </button>
-                                            <span v-if="node.variation_type !== 'none'" 
-                                                  class="variation-badge" 
-                                                  :title="'变化类型: ' + getVariationTypeDisplay(node.variation_type) + '\n间隔: ' + node.variation_interval + 'ms'">
-                                                <i class="bi bi-arrow-repeat"></i>
-                                            </span>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr v-if="nodes.length === 0">
-                                    <td colspan="7">
-                                        <div class="empty-state">
-                                            <i class="bi bi-database-x"></i>
-                                            <p>暂无节点数据</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="toast-body">
+                ${ toast.message }
             </div>
         </div>
     </div>
 
-    <!-- 节点编辑模态框 -->
-    <div class="modal fade" id="nodeModal" tabindex="-1" ref="nodeModal">
-        <div class="modal-dialog">
+    <!-- 状态总览 -->
+    <div class="status-overview">
+        <div class="status-card">
+            <div class="status-icon total">
+                <i class="bi bi-hdd-network"></i>
+            </div>
+            <div class="status-info">
+                <div class="status-label">服务器总数</div>
+                <div class="status-value">${ servers.length }</div>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-icon running">
+                <i class="bi bi-play-circle"></i>
+            </div>
+            <div class="status-info">
+                <div class="status-label">运行中服务器</div>
+                <div class="status-value">${ servers.filter(s => s.is_running).length }</div>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-icon stopped">
+                <i class="bi bi-stop-circle"></i>
+            </div>
+            <div class="status-info">
+                <div class="status-label">已停止服务器</div>
+                <div class="status-value">${ servers.filter(s => !s.is_running).length }</div>
+            </div>
+        </div>
+        <div class="status-card">
+            <div class="status-icon nodes">
+                <i class="bi bi-diagram-3"></i>
+            </div>
+            <div class="status-info">
+                <div class="status-label">节点总数</div>
+                <div class="status-value">${ servers.reduce((sum, server) => sum + (server.node_count || 0), 0) }</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务器管理工具栏 -->
+    <div class="toolbar">
+        <h2 class="mb-0">OPC UA服务器管理</h2>
+        <div class="btn-group">
+            <button class="btn btn-primary" @click="showServerModal('add')">
+                <i class="bi bi-plus-lg"></i>
+                添加服务器
+            </button>
+            <button class="btn btn-info" @click="showImportModal">
+                <i class="bi bi-upload"></i>
+                导入配置
+            </button>
+            <button class="btn btn-secondary" @click="exportConfig">
+                <i class="bi bi-download"></i>
+                导出配置
+            </button>
+            <button class="btn btn-secondary" @click="refreshServers">
+                <i class="bi bi-arrow-clockwise"></i>
+                刷新状态
+            </button>
+        </div>
+    </div>
+
+    <!-- 批量操作工具栏 -->
+    <div class="batch-actions" v-if="selectedServers.length > 0">
+        <span class="selected-count">已选择 ${ selectedServers.length } 个服务器</span>
+        <button class="btn btn-sm btn-success" @click="batchStartServers"
+                :disabled="isProcessing">
+            <i class="bi bi-play-fill"></i>
+            批量启动
+        </button>
+        <button class="btn btn-sm btn-danger" @click="batchStopServers"
+                :disabled="isProcessing">
+            <i class="bi bi-stop-fill"></i>
+            批量停止
+        </button>
+        <button class="btn btn-sm btn-danger" @click="confirmBatchDelete"
+                :disabled="isProcessing">
+            <i class="bi bi-trash"></i>
+            批量删除
+        </button>
+    </div>
+
+    <!-- 服务器卡片列表 -->
+    <div class="server-cards">
+        <div v-for="server in servers" :key="server.id" 
+             class="server-card" :class="{ active: server.id === currentServer?.id }">
+            <div class="card-header">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox"
+                           v-model="server.selected"
+                           @change="updateSelectedServers">
+                    <h5 class="mb-0">${ server.name }</h5>
+                </div>
+                <div class="server-status">
+                    <span class="status-indicator" :class="server.is_running ? 'running' : 'stopped'"></span>
+                    <span>${ server.is_running ? '运行中' : '已停止' }</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="info-item">
+                    <span>终端点：</span>
+                    <span>${ server.endpoint }:${ server.port }</span>
+                </div>
+                <div class="info-item">
+                    <span>节点数量：</span>
+                    <span>${ server.node_count }</span>
+                </div>
+                <div class="info-item">
+                    <span>创建时间：</span>
+                    <span>${ new Date(server.created_at).toLocaleString('zh-CN') }</span>
+                </div>
+                <div class="info-item">
+                    <span>最后更新：</span>
+                    <span>${ new Date(server.updated_at).toLocaleString('zh-CN') }</span>
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-sm btn-outline-primary" 
+                            @click="selectServer(server)"
+                            :disabled="server.id === currentServer?.id">
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        管理节点
+                    </button>
+                    <button class="btn btn-sm" 
+                            :class="server.is_running ? 'btn-outline-danger' : 'btn-outline-success'"
+                            @click="server.is_running ? stopServer(server) : startServer(server)"
+                            :disabled="isProcessing">
+                        <i class="bi" :class="server.is_running ? 'bi-stop-fill' : 'bi-play-fill'"></i>
+                        ${ server.is_running ? '停止' : '启动' }
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" 
+                            @click="showServerModal('edit', server)">
+                        <i class="bi bi-gear"></i>
+                        配置
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" 
+                            @click="confirmDeleteServer(server)"
+                            :disabled="server.is_running">
+                        <i class="bi bi-trash"></i>
+                        删除
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 空状态提示 -->
+        <div v-if="servers.length === 0" class="empty-state">
+            <i class="bi bi-server"></i>
+            <p>暂无服务器，点击"添加服务器"创建新的OPC UA服务器</p>
+        </div>
+    </div>
+
+    <!-- 节点管理区域 -->
+    <div v-if="currentServer" class="node-management">
+        <div class="toolbar">
+            <div class="d-flex align-items-center gap-3">
+                <h3 class="mb-0">${ currentServer.name } - 节点管理</h3>
+                <span class="badge" :class="currentServer.is_running ? 'bg-success' : 'bg-danger'">
+                    ${ currentServer.is_running ? '运行中' : '已停止' }
+                </span>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" @click="showNodeModal('add')"
+                        :disabled="!currentServer.is_running">
+                    <i class="bi bi-plus-lg"></i>
+                    添加节点
+                </button>
+                <button class="btn btn-info" @click="showBatchAddModal"
+                        :disabled="!currentServer.is_running">
+                    <i class="bi bi-collection"></i>
+                    批量添加
+                </button>
+                <button class="btn btn-secondary" @click="refreshNodes">
+                    <i class="bi bi-arrow-clockwise"></i>
+                    刷新
+                </button>
+            </div>
+        </div>
+
+        <!-- 节点列表 -->
+        <div class="table-container">
+            <div v-if="isLoading" class="loading-overlay">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">加载中...</span>
+                </div>
+            </div>
+
+            <table class="table table-hover mb-0" v-else>
+                <thead>
+                    <tr>
+                        <th>名称</th>
+                        <th>节点类型</th>
+                        <th>数据类型</th>
+                        <th>节点ID</th>
+                        <th>值</th>
+                        <th>描述</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="node in nodes" :key="node.id">
+                        <td>${ node.name }</td>
+                        <td>${ getNodeTypeDisplay(node.node_type) }</td>
+                        <td>${ getDataTypeDisplay(node.data_type) }</td>
+                        <td>${ node.node_id }</td>
+                        <td>${ formatNodeValue(node) }</td>
+                        <td>${ node.description || '-' }</td>
+                        <td>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-primary" @click="editNode(node)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @click="confirmDeleteNode(node)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                            <span v-if="node.variation_type !== 'none'" 
+                                  class="badge bg-info ms-2" 
+                                  :title="'变化类型: ' + getVariationTypeDisplay(node.variation_type)">
+                                <i class="bi bi-arrow-repeat"></i>
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- 空状态提示 -->
+            <div v-if="!isLoading && nodes.length === 0" class="empty-state">
+                <i class="bi bi-diagram-3"></i>
+                <p>暂无节点数据，点击"添加节点"创建新的节点</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 服务器配置模态框 -->
+    <div class="modal fade" id="serverModal" tabindex="-1" ref="serverModal">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">[[ isEditMode ? '编辑节点' : '添加节点' ]]</h5>
+                    <h5 class="modal-title">
+                        ${ serverAction === 'add' ? '添加服务器' : '编辑服务器' }
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form @submit.prevent="saveNode" id="nodeForm">
+                    <form @submit.prevent="handleServerAction" id="serverForm" novalidate>
+                        <!-- 基本配置 -->
                         <div class="mb-3">
-                            <label for="name" class="form-label">名称</label>
-                            <input type="text" class="form-control" id="name" 
-                                   v-model="currentNode.name" required
-                                   :class="{ 'is-invalid': formErrors.name }">
-                            <div class="invalid-feedback" v-if="formErrors.name">
-                                [[ formErrors.name ]]
-                            </div>
+                            <label for="serverName" class="form-label">服务器名称</label>
+                            <input type="text" class="form-control" id="serverName" name="name"
+                                   v-model="serverForm.name" required>
+                            <div class="form-text">给服务器起一个容易识别的名称</div>
                         </div>
                         <div class="mb-3">
-                            <label for="nodeType" class="form-label">节点类型</label>
-                            <select class="form-control" id="nodeType" v-model="currentNode.node_type" 
-                                    :disabled="isEditMode">
-                                <option v-for="type in nodeTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
-                        </div>
-                        <div class="mb-3" v-if="currentNode.node_type === 'variable'">
-                            <label for="dataType" class="form-label">数据类型</label>
-                            <select class="form-control" id="dataType" v-model="currentNode.data_type" 
-                                    :disabled="isEditMode"
-                                    :class="{ 'is-invalid': formErrors.dataType }"
-                                    @change="validateValue">
-                                <option v-for="type in dataTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
-                            <div class="invalid-feedback" v-if="formErrors.dataType">
-                                [[ formErrors.dataType ]]
-                            </div>
+                            <label for="serverEndpoint" class="form-label">终端点</label>
+                            <input type="text" class="form-control" id="serverEndpoint" name="endpoint"
+                                   v-model="serverForm.endpoint" required>
+                            <div class="form-text">服务器的IP地址或域名，例如：localhost 或 192.168.1.100</div>
                         </div>
                         <div class="mb-3">
-                            <label for="nodeIdentifier" class="form-label">节点ID</label>
-                            <input type="text" class="form-control" id="nodeIdentifier" 
-                                   v-model="currentNode.node_id" required 
-                                   :disabled="isEditMode"
-                                   :class="{ 'is-invalid': nodeIdError || formErrors.nodeId }"
-                                   @input="checkNodeIdExists(currentNode.node_id)">
-                            <div class="invalid-feedback" v-if="nodeIdError || formErrors.nodeId">
-                                [[ nodeIdError || formErrors.nodeId ]]
-                            </div>
-                            <small class="form-text text-help">
-                                支持的格式：<br>
-                                - 数字标识符：ns=1;i=1000<br>
-                                - 字符串标识符：ns=1;s=MyNode<br>
-                                - GUID标识符：ns=1;g=09087e75-8e5e-499b-954f-f2a9603db28a<br>
-                                - 二进制标识符：ns=1;b=SGVsbG8gV29ybGQ=
-                            </small>
-                        </div>
-                        <div class="mb-3" v-if="currentNode.node_type === 'variable'">
-                            <label for="value" class="form-label">初始值 <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="value" 
-                                   v-model="currentNode.value"
-                                   :class="{ 'is-invalid': formErrors.value }"
-                                   @input="validateValue"
-                                   required>
-                            <div class="invalid-feedback" v-if="formErrors.value">
-                                [[ formErrors.value ]]
-                            </div>
-                            <div class="form-text text-help" v-if="valueHint">
-                                [[ valueHint ]]
-                            </div>
-                            <div class="form-text text-range" v-if="valueRange">
-                                <span>最小值: [[ valueRange.min ]]</span>
-                                <span>最大值: [[ valueRange.max ]]</span>
-                            </div>
+                            <label for="serverPort" class="form-label">端口号</label>
+                            <input type="number" class="form-control" id="serverPort" name="port"
+                                   v-model="serverForm.port" min="1024" max="65535" required>
+                            <div class="form-text">服务器监听的端口号，默认为4840</div>
                         </div>
                         <div class="mb-3">
-                            <label for="description" class="form-label">描述</label>
-                            <textarea class="form-control" id="description" rows="3" 
-                                      v-model="currentNode.description"></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="variationType" class="form-label">变化类型</label>
-                            <select class="form-control" id="variationType" v-model="currentNode.variation_type">
-                                <option v-for="type in variationTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
+                            <label for="serverUri" class="form-label">服务器URI</label>
+                            <input type="text" class="form-control" id="serverUri" name="uri"
+                                   v-model="serverForm.uri" required>
+                            <div class="form-text">服务器的唯一标符，例如：urn:myserver</div>
                         </div>
 
-                        <!-- 变化配置 -->
-                        <template v-if="currentNode.variation_type !== 'none'">
-                            <div class="mb-3" v-if="['random', 'linear', 'cycle'].includes(currentNode.variation_type)">
-                                <div class="row">
-                                    <div class="col">
-                                        <label for="variationMin" class="form-label">最小值</label>
-                                        <input type="number" class="form-control" id="variationMin" 
-                                               v-model="currentNode.variation_min" step="any">
-                                    </div>
-                                    <div class="col">
-                                        <label for="variationMax" class="form-label">最大值</label>
-                                        <input type="number" class="form-control" id="variationMax" 
-                                               v-model="currentNode.variation_max" step="any">
-                                    </div>
-                                </div>
+                        <!-- 安全设 -->
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="allowAnonymous" name="allow_anonymous"
+                                       v-model="serverForm.allow_anonymous">
+                                <label class="form-check-label" for="allowAnonymous">
+                                    允许匿名访问
+                                </label>
                             </div>
-                            <div class="mb-3" v-if="['linear', 'cycle'].includes(currentNode.variation_type)">
-                                <label for="variationStep" class="form-label">变化步长</label>
-                                <input type="number" class="form-control" id="variationStep" 
-                                       v-model="currentNode.variation_step" step="any">
+                            <div class="form-text text-warning" v-if="serverForm.allow_anonymous">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                警告：允许匿名访问可能存在安全风险
                             </div>
-                            <div class="mb-3" v-if="currentNode.variation_type === 'discrete'">
-                                <label for="variationValues" class="form-label">离散值��合</label>
-                                <input type="text" class="form-control" id="variationValues" 
-                                       v-model="currentNode.variation_values" 
-                                       placeholder="例如：[1, 2, 3, 4]">
-                                <small class="form-text text-muted">输入JSON格式的数组</small>
+                        </div>
+                        <div v-if="!serverForm.allow_anonymous">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">用户名</label>
+                                <input type="text" class="form-control" id="username" name="username"
+                                       v-model="serverForm.username" required>
                             </div>
                             <div class="mb-3">
-                                <label for="variationInterval" class="form-label">变化间隔(毫秒)</label>
-                                <input type="number" class="form-control" id="variationInterval" 
-                                       v-model="currentNode.variation_interval" min="100">
-                                <small class="form-text text-muted">最少100毫秒</small>
+                                <label for="password" class="form-label">密码</label>
+                                <div class="input-group">
+                                    <input :type="showPassword ? 'text' : 'password'" 
+                                           class="form-control" id="password" name="password"
+                                           v-model="serverForm.password" required>
+                                    <button class="btn btn-outline-secondary" type="button"
+                                            @click="showPassword = !showPassword">
+                                        <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
+                                    </button>
+                                </div>
                             </div>
+                        </div>
 
-                            <!-- 小数位数设置 -->
-                            <div class="mb-3" v-if="currentNode.data_type === 'double' || currentNode.data_type === 'float'">
-                                <label for="decimalPlaces" class="form-label">小数位数</label>
-                                <input type="number" class="form-control" id="decimalPlaces" 
-                                       v-model="currentNode.decimal_places" min="0" max="10">
-                                <small class="form-text text-muted">设置数值显示的小数位数（0-10位）</small>
+                        <!-- 高级选项 -->
+                        <a href="#" class="advanced-options-toggle" 
+                           :class="{ expanded: showAdvanced }"
+                           @click.prevent="showAdvanced = !showAdvanced">
+                            <i class="bi bi-chevron-down"></i>
+                            高级选项
+                        </a>
+                        <div class="advanced-options" v-show="showAdvanced">
+                            <div class="mb-3">
+                                <label for="minSamplingInterval" class="form-label">
+                                    最小采样间隔(ms)
+                                </label>
+                                <input type="number" class="form-control" id="minSamplingInterval" name="min_sampling_interval"
+                                       v-model="serverForm.min_sampling_interval" min="100" required>
+                                <div class="form-text">数据采样的最小时间间隔，建议不小于100ms</div>
                             </div>
-                        </template>
+                            <div class="mb-3">
+                                <label for="maxConnections" class="form-label">
+                                    最大连接数
+                                </label>
+                                <input type="number" class="form-control" id="maxConnections" name="max_connections"
+                                       v-model="serverForm.max_connections" min="1">
+                                <div class="form-text">允许的最大客户端连接数，默认不限制</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="securityPolicy" class="form-label">
+                                    安全策略
+                                </label>
+                                <select class="form-select" id="securityPolicy" name="security_policy"
+                                        v-model="serverForm.security_policy">
+                                    <option value="None">None - 无安全策略</option>
+                                    <option value="Basic128Rsa15">Basic128Rsa15 - 基本RSA加密</option>
+                                    <option value="Basic256">Basic256 - 256位基本加密</option>
+                                    <option value="Basic256Sha256">Basic256Sha256 - SHA256加密</option>
+                                </select>
+                                <div class="form-text">选择服务器使用的安全策略</div>
+                            </div>
+                        </div>
 
-                        <!-- 规则预设 -->
-                        <div class="mb-3">
-                            <label class="form-label">快速规则</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" 
-                                        v-for="(rule, key) in rulePresets" 
-                                        :key="key"
-                                        @click="applyRulePreset(key)">
-                                    <i :class="rule.icon"></i> [[ rule.name ]]
-                                </button>
-                            </div>
+                        <!-- 测试连接结果 -->
+                        <div class="test-result" :class="testResult.status" v-if="testResult.message">
+                            <i class="bi" :class="testResult.status === 'success' ? 'bi-check-circle' : 'bi-x-circle'"></i>
+                            ${ testResult.message }
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" @click="saveNode" :disabled="!isFormValid">
-                        保存
+                    <button type="button" class="btn btn-info" @click="testConnection"
+                            :disabled="isProcessing || !isFormValid">
+                        <i class="bi bi-lightning"></i>
+                        测试连接
+                    </button>
+                    <button type="submit" form="serverForm" class="btn btn-primary"
+                            :disabled="isProcessing || !isFormValid || (serverAction === 'add' && !testResult.success)">
+                        ${ isProcessing ? '处理中...' : '确定' }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导入配置模态框 -->
+    <div class="modal fade" id="importModal" tabindex="-1" ref="importModal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">导入服务器配置</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="configFile" class="form-label">选择配置文件</label>
+                        <input type="file" class="form-control" id="configFile"
+                               @change="handleFileSelect" accept=".json">
+                        <div class="form-text">支持JSON格式的配置文件</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="overwrite"
+                                   v-model="importOptions.overwrite">
+                            <label class="form-check-label" for="overwrite">
+                                覆盖同名服务器
+                            </label>
+                        </div>
+                    </div>
+                    <div v-if="importPreview.length > 0" class="mt-3">
+                        <h6>导入预览</h6>
+                        <ul class="list-group">
+                            <li v-for="server in importPreview" :key="server.name"
+                                class="list-group-item d-flex justify-content-between align-items-center">
+                                ${ server.name }
+                                <span class="server-status-badge" 
+                                      :class="server.exists ? 'warning' : 'success'">
+                                    ${ server.exists ? '已存在' : '新服务器' }
+                                </span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" @click="importConfig"
+                            :disabled="!importPreview.length || isProcessing">
+                        ${ isProcessing ? '导入中...' : '确认导入' }
                     </button>
                 </div>
             </div>
@@ -606,332 +791,19 @@
     </div>
 
     <!-- 确认对话框 -->
-    <div class="modal fade confirm-modal" id="confirmModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-body">
-                    <i class="bi" :class="[confirmDialog.iconClass, 'modal-icon', confirmDialog.type]"></i>
-                    <h5 class="modal-title">[[ confirmDialog.title ]]</h5>
-                    <p class="modal-message">[[ confirmDialog.message ]]</p>
-                    
-                    <!-- 节点信息（仅在删除节点时显示） -->
-                    <div class="node-info" v-if="confirmDialog.type === 'danger' && confirmDialog.node">
-                        <div class="mb-2">
-                            <div class="info-label">节点名称</div>
-                            <p class="info-value">[[ confirmDialog.node.name ]]</p>
-                        </div>
-                        <div class="mb-2">
-                            <div class="info-label">节点ID</div>
-                            <p class="info-value">[[ confirmDialog.node.node_id ]]</p>
-                        </div>
-                        <div>
-                            <div class="info-label">节点类型</div>
-                            <p class="info-value">[[ getNodeTypeDisplay(confirmDialog.node.node_type) ]]</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        取消
-                    </button>
-                    <button type="button" 
-                            :class="['btn btn-confirm', confirmDialog.type === 'danger' ? 'btn-danger' : 'btn-warning']"
-                            @click="handleConfirm">
-                        [[ confirmDialog.confirmText ]]
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 批量添加模态框 -->
-    <div class="modal fade" id="batchAddModal" tabindex="-1" ref="batchAddModal">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">批量添加节点</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form @submit.prevent="saveBatchNodes" id="batchNodeForm">
-                        <!-- 基本设置 -->
-                        <div class="mb-3">
-                            <label class="form-label">节点名称模板</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" v-model="batchSettings.nameTemplate" 
-                                       placeholder="例如：tube{n}" required
-                                       :class="{ 'is-invalid': batchErrors.nameTemplate }">
-                                <span class="input-group-text" title="使用{n}表示序号位置">?</span>
-                            </div>
-                            <small class="form-text text-muted">使用{n}表示序号位置，如：tube{n}</small>
-                            <div class="invalid-feedback" v-if="batchErrors.nameTemplate">
-                                [[ batchErrors.nameTemplate ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">节点ID模板</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" v-model="batchSettings.nodeIdTemplate" 
-                                       placeholder="例如：ns=1;s=tube{n}" required
-                                       :class="{ 'is-invalid': batchErrors.nodeIdTemplate }">
-                                <span class="input-group-text" title="使用{n}表示序号位置">?</span>
-                            </div>
-                            <small class="form-text text-muted">
-                                支持的格式：<br>
-                                - 字符串标识符：ns=1;s=tube{n}<br>
-                                - 数字标识符：ns=1;i=1000{n}<br>
-                                注意：GUID和二进制标识符不支持批量创建
-                            </small>
-                            <div class="invalid-feedback" v-if="batchErrors.nodeIdTemplate">
-                                [[ batchErrors.nodeIdTemplate ]]
-                            </div>
-                        </div>
-
-                        <div class="row mb-3">
-                            <div class="col">
-                                <label class="form-label">起始序号</label>
-                                <input type="number" class="form-control" v-model="batchSettings.startIndex" 
-                                       min="1" required :class="{ 'is-invalid': batchErrors.range }">
-                            </div>
-                            <div class="col">
-                                <label class="form-label">结束序号</label>
-                                <input type="number" class="form-control" v-model="batchSettings.endIndex" 
-                                       min="1" required :class="{ 'is-invalid': batchErrors.range }">
-                            </div>
-                            <div class="invalid-feedback" v-if="batchErrors.range">
-                                [[ batchErrors.range ]]
-                            </div>
-                        </div>
-
-                        <!-- 节点配置 -->
-                        <div class="mb-3">
-                            <label class="form-label">节点类型</label>
-                            <select class="form-control" v-model="batchSettings.nodeType">
-                                <option v-for="type in nodeTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3" v-if="batchSettings.nodeType === 'variable'">
-                            <label class="form-label">数据类型</label>
-                            <select class="form-control" v-model="batchSettings.dataType">
-                                <option v-for="type in dataTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3" v-if="batchSettings.nodeType === 'variable'">
-                            <label class="form-label">初始值模板</label>
-                            <input type="text" class="form-control" v-model="batchSettings.valueTemplate" 
-                                   placeholder="如：{n}或固定值"
-                                   :class="{ 'is-invalid': batchErrors.value }">
-                            <small class="form-text text-muted">可以使用{n}表示序号，或输入固定值</small>
-                            <div class="invalid-feedback" v-if="batchErrors.value">
-                                [[ batchErrors.value ]]
-                            </div>
-                        </div>
-
-                        <!-- 变化设置 -->
-                        <div class="mb-3">
-                            <label class="form-label">变化类型</label>
-                            <select class="form-control" v-model="batchSettings.variationType">
-                                <option v-for="type in variationTypes" :key="type.value" :value="type.value">
-                                    [[ type.label ]]
-                                </option>
-                            </select>
-                        </div>
-
-                        <template v-if="batchSettings.variationType !== 'none'">
-                            <div class="mb-3" v-if="['random', 'linear', 'cycle'].includes(batchSettings.variationType)">
-                                <div class="row">
-                                    <div class="col">
-                                        <label class="form-label">最小值</label>
-                                        <input type="number" class="form-control" v-model="batchSettings.variationMin" step="any">
-                                    </div>
-                                    <div class="col">
-                                        <label class="form-label">最大值</label>
-                                        <input type="number" class="form-control" v-model="batchSettings.variationMax" step="any">
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mb-3" v-if="['linear', 'cycle'].includes(batchSettings.variationType)">
-                                <label class="form-label">变化步长</label>
-                                <input type="number" class="form-control" v-model="batchSettings.variationStep" step="any">
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">变化间隔(毫秒)</label>
-                                <input type="number" class="form-control" v-model="batchSettings.variationInterval" min="100">
-                            </div>
-                            <div class="mb-3" v-if="batchSettings.dataType === 'double' || batchSettings.dataType === 'float'">
-                                <label class="form-label">小数位数</label>
-                                <input type="number" class="form-control" v-model="batchSettings.decimalPlaces" min="0" max="10">
-                            </div>
-                        </template>
-
-                        <!-- 预览 -->
-                        <div class="mb-3">
-                            <label class="form-label">预览</label>
-                            <div v-if="batchErrors.duplicates.length > 0" class="alert alert-warning">
-                                <i class="bi bi-exclamation-triangle me-2"></i>
-                                以下节点ID已存在：
-                                <ul class="mb-0 mt-2">
-                                    <li v-for="nodeId in batchErrors.duplicates" :key="nodeId">
-                                        [[ nodeId ]]
-                                    </li>
-                                </ul>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>名称</th>
-                                            <th>节点ID</th>
-                                            <th>初始值</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="preview in batchPreview" :key="preview.nodeId">
-                                            <td>[[ preview.name ]]</td>
-                                            <td>[[ preview.nodeId ]]</td>
-                                            <td>[[ preview.value ]]</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" @click="saveBatchNodes" 
-                            :disabled="!isBatchFormValid || isProcessing">
-                        [[ isProcessing ? '处理中...' : '保存' ]]
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 服务器配置模态框 -->
-    <div class="modal fade" id="serverConfigModal" tabindex="-1" ref="serverConfigModal">
+    <div class="modal fade" id="confirmModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">OPC UA服务器配置</h5>
+                    <h5 class="modal-title">${ confirmDialog.title }</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form @submit.prevent="saveServerConfig" id="serverConfigForm">
-                        <!-- 基本配置 -->
-                        <div class="mb-3">
-                            <label class="form-label">服务器名称</label>
-                            <input type="text" class="form-control" v-model="serverConfig.name" 
-                                   placeholder="例如：MyOPCServer" required
-                                   :class="{ 'is-invalid': configErrors.name }">
-                            <div class="invalid-feedback" v-if="configErrors.name">
-                                [[ configErrors.name ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">端口号</label>
-                            <input type="number" class="form-control" v-model="serverConfig.port" 
-                                   min="1024" max="65535" required
-                                   :class="{ 'is-invalid': configErrors.port }">
-                            <small class="form-text text-muted">有效端口范围：1024-65535</small>
-                            <div class="invalid-feedback" v-if="configErrors.port">
-                                [[ configErrors.port ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">URI</label>
-                            <input type="text" class="form-control" v-model="serverConfig.uri" 
-                                   placeholder="例如：urn:myserver" required
-                                   :class="{ 'is-invalid': configErrors.uri }">
-                            <div class="invalid-feedback" v-if="configErrors.uri">
-                                [[ configErrors.uri ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">主机地址</label>
-                            <input type="text" class="form-control" v-model="serverConfig.host" 
-                                   placeholder="例如：0.0.0.0" required
-                                   :class="{ 'is-invalid': configErrors.host }">
-                            <small class="form-text text-muted">使用0.0.0.0允许所有地址访问</small>
-                            <div class="invalid-feedback" v-if="configErrors.host">
-                                [[ configErrors.host ]]
-                            </div>
-                        </div>
-
-                        <!-- 安全配置 -->
-                        <h6 class="mb-3">安全设置</h6>
-                        
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" 
-                                       v-model="serverConfig.allowAnonymous" 
-                                       id="allowAnonymous">
-                                <label class="form-check-label" for="allowAnonymous">
-                                    允许匿名访问
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="mb-3" v-if="!serverConfig.allowAnonymous">
-                            <label class="form-label">用户名</label>
-                            <input type="text" class="form-control" v-model="serverConfig.username" 
-                                   :class="{ 'is-invalid': configErrors.username }">
-                            <div class="invalid-feedback" v-if="configErrors.username">
-                                [[ configErrors.username ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3" v-if="!serverConfig.allowAnonymous">
-                            <label class="form-label">密码</label>
-                            <input type="password" class="form-control" v-model="serverConfig.password" 
-                                   :class="{ 'is-invalid': configErrors.password }">
-                            <div class="invalid-feedback" v-if="configErrors.password">
-                                [[ configErrors.password ]]
-                            </div>
-                        </div>
-
-                        <!-- 高级配置 -->
-                        <h6 class="mb-3">高级设置</h6>
-
-                        <div class="mb-3">
-                            <label class="form-label">最小发布间隔(毫秒)</label>
-                            <input type="number" class="form-control" v-model="serverConfig.minPublishingInterval" 
-                                   min="100" step="100" required
-                                   :class="{ 'is-invalid': configErrors.minPublishingInterval }">
-                            <small class="form-text text-muted">建议值：100-1000</small>
-                            <div class="invalid-feedback" v-if="configErrors.minPublishingInterval">
-                                [[ configErrors.minPublishingInterval ]]
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">默认命名空间</label>
-                            <input type="number" class="form-control" v-model="serverConfig.defaultNamespace" 
-                                   min="1" max="65535" required
-                                   :class="{ 'is-invalid': configErrors.defaultNamespace }">
-                            <small class="form-text text-muted">通常使用1作为默认命名空间</small>
-                            <div class="invalid-feedback" v-if="configErrors.defaultNamespace">
-                                [[ configErrors.defaultNamespace ]]
-                            </div>
-                        </div>
-                    </form>
+                    ${ confirmDialog.message }
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" @click="saveServerConfig" 
-                            :disabled="!isConfigValid || isProcessing">
-                        [[ isProcessing ? '保存中...' : '保存' ]]
-                    </button>
+                    <button type="button" class="btn btn-danger" @click="handleConfirm">确定</button>
                 </div>
             </div>
         </div>
@@ -940,1209 +812,727 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/vue@3.4.15/dist/vue.global.prod.js"></script>
 <script>
-const { createApp } = Vue
-
-const app = createApp({
-    delimiters: ['[[', ']]'],
-    data() {
-        return {
-            nodes: [],
-            currentNode: {
-                name: '',
-                node_type: 'variable',
-                node_id: '',
-                data_type: 'double',
-                value: '',
-                description: '',
-                variation_type: 'none',
-                variation_interval: 1000,
-                variation_min: null,
-                variation_max: null,
-                variation_step: null,
-                variation_values: '',
-                decimal_places: 2
-            },
-            isEditMode: false,
-            modal: null,
-            refreshInterval: null,
-            serverRunning: false,
-            needsRestart: false,
-            isRestarting: false,
-            nodeTypes: [
-                { value: 'variable', label: '变量' },
-                { value: 'object', label: '对象' },
-                { value: 'method', label: '方法' }
-            ],
-            dataTypes: [
-                { value: 'double', label: '双精度浮点数(Double)' },
-                { value: 'float', label: '单精度浮点数(Float)' },
-                { value: 'int32', label: '32位整数(Int32)' },
-                { value: 'int64', label: '64位整数(Int64)' },
-                { value: 'uint16', label: '无符号16位整数(UInt16)' },
-                { value: 'uint32', label: '无符号32位整数(UInt32)' },
-                { value: 'uint64', label: '无符号64位整数(UInt64)' },
-                { value: 'boolean', label: '布尔值(Boolean)' },
-                { value: 'string', label: '字符串(String)' },
-                { value: 'datetime', label: '日期时间(DateTime)' },
-                { value: 'bytestring', label: '字节串(ByteString)' },
-                { value: 'array', label: '数组(Array)' }
-            ],
-            variationTypes: [
-                { value: 'none', label: '不变化' },
-                { value: 'random', label: '随机变化' },
-                { value: 'linear', label: '线性变化' },
-                { value: 'discrete', label: '离散变化' },
-                { value: 'cycle', label: '循环变化' }
-            ],
-            rulePresets: {
-                temperature: {
-                    name: '度',
-                    icon: 'bi bi-thermometer-half',
-                    type: 'linear',
-                    min: 20,
-                    max: 30,
-                    step: 0.1,
-                    interval: 1000,
-                    description: '温度模拟(20-30℃)'
-                },
-                pressure: {
-                    name: '压力',
-                    icon: 'bi bi-speedometer',
-                    type: 'random',
-                    min: 0.8,
-                    max: 1.2,
-                    interval: 500,
-                    description: '压力模(0.8-1.2MPa)'
-                },
-                flow: {
-                    name: '流量',
-                    icon: 'bi bi-wind',
-                    type: 'random',
-                    min: 10,
-                    max: 20,
-                    interval: 800,
-                    description: '气体流量(10-20m³/h)'
-                },
-                current: {
-                    name: '电流',
-                    icon: 'bi bi-lightning',
-                    type: 'random',
-                    min: 4,
-                    max: 20,
-                    interval: 500,
-                    description: '电流(4-20mA)'
-                },
-                voltage: {
-                    name: '电压',
-                    icon: 'bi bi-lightning-charge',
-                    type: 'random',
-                    min: 0,
-                    max: 24,
-                    interval: 500,
-                    description: '电压(0-24V)'
-                },
-                power: {
-                    name: '功率',
-                    icon: 'bi bi-plug',
-                    type: 'random',
-                    min: 0,
-                    max: 100,
-                    interval: 1000,
-                    description: '功率(0-100kW)'
-                },
-                deviation: {
-                    name: '偏差',
-                    icon: 'bi bi-percent',
-                    type: 'random',
-                    min: -5,
-                    max: 5,
-                    interval: 1000,
-                    description: '偏差(-5%~+5%)'
-                },
-                humidity: {
-                    name: '湿度',
-                    icon: 'bi bi-droplet-half',
-                    type: 'random',
-                    min: 30,
-                    max: 70,
-                    interval: 2000,
-                    description: '湿度(30-70%)'
-                },
-                alarm: {
-                    name: '报警',
-                    icon: 'bi bi-exclamation-triangle',
-                    type: 'discrete',
-                    values: '[0, 1, 2]',
-                    interval: 5000,
-                    description: '报警状态(0:正常,1:警告,2:报警)'
-                },
-                switch: {
-                    name: '开关',
-                    icon: 'bi bi-toggle-on',
-                    type: 'discrete',
-                    values: '[0, 1]',
-                    interval: 1500,
-                    description: '开关状态(0:关闭,1:开启)'
-                },
-                counter: {
-                    name: '计数器',
-                    icon: 'bi bi-plus-circle',
-                    type: 'cycle',
-                    min: 0,
-                    max: 999999,
-                    step: 1,
-                    interval: 1000,
-                    description: '计数器(0-999999循环)'
-                },
-                sine: {
-                    name: '正弦波',
-                    icon: 'bi bi-graph-up',
-                    type: 'linear',
-                    min: -1,
-                    max: 1,
-                    step: 0.1,
-                    interval: 100,
-                    description: '正弦波模拟(-1到1)'
-                }
-            },
-            nodeIdError: '',
-            isCheckingNodeId: false,
-            formErrors: {
-                name: '',
-                nodeId: '',
-                value: ''
-            },
-            confirmDialog: {
-                title: '',
-                message: '',
-                callback: null,
-                type: 'warning',  // 'warning' 或 'danger'
-                iconClass: '',
-                confirmText: '',
-                node: null
-            },
-            confirmModal: null,
-            valueRanges: {
-                'int32': { min: -2147483648, max: 2147483647 },
-                'int64': { min: -9223372036854775808n, max: 9223372036854775807n },
-                'uint16': { min: 0, max: 65535 },
-                'uint32': { min: 0, max: 4294967295 },
-                'uint64': { min: 0n, max: 18446744073709551615n },
-                'float': { min: -3.4e38, max: 3.4e38 },
-                'double': { min: -1.8e308, max: 1.8e308 }
-            },
-            batchSettings: {
-                nameTemplate: '',
-                nodeIdTemplate: '',
-                startIndex: 1,
-                endIndex: 1,
-                nodeType: 'variable',
-                dataType: 'double',
-                valueTemplate: '',
-                variationType: 'none',
-                variationMin: null,
-                variationMax: null,
-                variationStep: null,
-                variationInterval: 1000,
-                decimalPlaces: 2
-            },
-            batchErrors: {
-                nameTemplate: '',
-                nodeIdTemplate: '',
-                range: '',
-                value: '',
-                duplicates: []
-            },
-            isProcessing: false,
-            batchAddModal: null,
-            serverConfig: {
-                name: '',
-                port: 4840,
-                uri: '',
-                host: '0.0.0.0',
-                allowAnonymous: true,
-                username: '',
-                password: '',
-                minPublishingInterval: 100,
-                defaultNamespace: 1
-            },
-            configErrors: {
-                name: '',
-                port: '',
-                uri: '',
-                host: '',
-                username: '',
-                password: '',
-                minPublishingInterval: '',
-                defaultNamespace: ''
-            },
-            serverConfigModal: null
-        }
-    },
-    computed: {
-        valueRange() {
-            if (this.currentNode.node_type !== 'variable') return null;
-            return this.valueRanges[this.currentNode.data_type];
-        },
-        valueHint() {
-            if (this.currentNode.node_type !== 'variable') return '';
-            
-            const dataType = this.currentNode.data_type;
-            switch(dataType) {
-                case 'double':
-                case 'float':
-                    return '请输入数字（可包含小数点）';
-                case 'int32':
-                case 'int64':
-                    return '请输入整数';
-                case 'uint16':
-                case 'uint32':
-                case 'uint64':
-                    return '请输入非负整数';
-                case 'boolean':
-                    return '请输入 true 或 false';
-                case 'string':
-                    return '请输入字符串';
-                case 'datetime':
-                    return '请输入ISO格式的日期时间（如：2024-01-01T00:00:00）';
-                case 'array':
-                    return '请输入JSON格式的数组';
-                default:
-                    return '';
-            }
-        },
-        serverStatus() {
-            return this.serverRunning ? '运行中' : '已停止'
-        },
-        serverStatusClass() {
+    const { createApp } = Vue;
+    
+    const app = createApp({
+        delimiters: ['${', '}'],
+        data() {
             return {
-                'badge': true,
-                'bg-success': this.serverRunning,
-                'bg-danger': !this.serverRunning
+                servers: [],
+                currentServer: null,
+                nodes: [],
+                isLoading: false,
+                isProcessing: false,
+                serverAction: 'add',
+                serverForm: {
+                    id: null,
+                    name: '',
+                    endpoint: '',
+                    port: 4840,
+                    uri: '',
+                    allow_anonymous: true,
+                    username: '',
+                    password: '',
+                    min_sampling_interval: 100,
+                    max_connections: 0,
+                    security_policy: 'None'
+                },
+                confirmDialog: {
+                    title: '',
+                    message: '',
+                    callback: null
+                },
+                refreshInterval: null,
+                selectedServers: [],
+                showPassword: false,
+                showAdvanced: false,
+                testResult: {
+                    status: '',
+                    message: '',
+                    success: false
+                },
+                importOptions: {
+                    overwrite: false
+                },
+                importPreview: [],
+                formErrors: {},
+                toasts: [],
+                toastTimeout: 3000
             }
         },
-        isFormValid() {
-            // 检查必填字段
-            if (!this.currentNode.name || !this.currentNode.node_id) {
-                return false;
-            }
-            
-            // 如果是新建节点，检查节点ID格
-            if (!this.isEditMode && this.nodeIdError) {
-                return false;
-            }
-            
-            // 如果是变量节点，检查数据类型和值
-            if (this.currentNode.node_type === 'variable') {
-                // 检查数据类型是否已选择
-                if (!this.currentNode.data_type) {
+        computed: {
+            isFormValid() {
+                // 检查必填字段
+                if (!this.serverForm.name || !this.serverForm.endpoint || 
+                    !this.serverForm.port || !this.serverForm.uri) {
                     return false;
                 }
                 
-                // 检查值是否存在且有效
-                if (!this.currentNode.value || this.formErrors.value) {
+                // 检查端口范围
+                if (this.serverForm.port < 1024 || this.serverForm.port > 65535) {
                     return false;
                 }
                 
-                // 检查值是否在范围内
-                if (!this.isValueInRange()) {
-                    return false;
-                }
-            }
-            
-            return true;
-        },
-        batchPreview() {
-            if (!this.batchSettings.nameTemplate || !this.batchSettings.nodeIdTemplate || 
-                !this.batchSettings.startIndex || !this.batchSettings.endIndex) {
-                return [];
-            }
-
-            const preview = [];
-            for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
-                const name = this.batchSettings.nameTemplate.replace('{n}', i);
-                const nodeId = this.batchSettings.nodeIdTemplate.replace('{n}', i);
-                const value = this.batchSettings.valueTemplate ? 
-                             this.batchSettings.valueTemplate.replace('{n}', i) : '';
-                preview.push({ name, nodeId, value });
-            }
-            return preview;
-        },
-        isBatchFormValid() {
-            // 检查是否有任何错误
-            return this.batchSettings.nameTemplate && 
-                   this.batchSettings.nodeIdTemplate && 
-                   this.batchSettings.startIndex && 
-                   this.batchSettings.endIndex &&
-                   this.batchSettings.startIndex <= this.batchSettings.endIndex &&
-                   !this.batchErrors.nameTemplate &&
-                   !this.batchErrors.nodeIdTemplate &&
-                   !this.batchErrors.range &&
-                   !this.batchErrors.value &&
-                   this.batchErrors.duplicates.length === 0;
-        },
-        isConfigValid() {
-            // 检查必填字段
-            if (!this.serverConfig.name || !this.serverConfig.uri || 
-                !this.serverConfig.host || !this.serverConfig.port) {
-                return false;
-            }
-            
-            // 检查端口范围
-            if (this.serverConfig.port < 1024 || this.serverConfig.port > 65535) {
-                return false;
-            }
-            
-            // 如果不允许匿名访问，检查用户名和密码
-            if (!this.serverConfig.allowAnonymous && 
-                (!this.serverConfig.username || !this.serverConfig.password)) {
-                return false;
-            }
-            
-            // 检查发布间隔
-            if (this.serverConfig.minPublishingInterval < 100) {
-                return false;
-            }
-            
-            // 检查命名空间
-            if (this.serverConfig.defaultNamespace < 1 || 
-                this.serverConfig.defaultNamespace > 65535) {
-                return false;
-            }
-            
-            // 检查是否有任何错误
-            return !Object.values(this.configErrors).some(error => error !== '');
-        }
-    },
-    methods: {
-        getEmptyNode() {
-            return {
-                id: null,
-                name: '',
-                node_type: 'variable',
-                data_type: 'double',
-                node_id: '',
-                value: '',
-                description: '',
-                variation_type: 'none',
-                variation_interval: 1000,
-                variation_min: null,
-                variation_max: null,
-                variation_step: null,
-                variation_values: null
-            }
-        },
-        async loadNodes() {
-            try {
-                const response = await fetch('/node/list/')
-                const data = await response.json()
-                if (data.success) {
-                    this.nodes = data.nodes
-                } else {
-                    alert('加载节点失: ' + data.error)
-                }
-            } catch (error) {
-                console.error('Error loading nodes:', error)
-                alert('加载节点失败')
-            }
-        },
-        showAddNodeModal() {
-            this.isEditMode = false
-            this.currentNode = this.getEmptyNode()
-            this.nodeIdError = ''
-            this.formErrors = {
-                name: '',
-                nodeId: '',
-                value: ''
-            }
-            this.modal.show()
-        },
-        editNode(node) {
-            this.isEditMode = true
-            this.currentNode = { ...node }
-            this.nodeIdError = ''
-            this.formErrors = {
-                name: '',
-                nodeId: '',
-                value: ''
-            }
-            this.modal.show()
-        },
-        async saveNode() {
-            if (!this.validateForm()) return;
-            
-            const nodeData = {
-                name: this.currentNode.name,
-                node_type: this.currentNode.node_type,
-                node_id: this.currentNode.node_id,
-                data_type: this.currentNode.data_type,
-                value: this.currentNode.value,
-                description: this.currentNode.description,
-                variation_type: this.currentNode.variation_type,
-                variation_interval: this.currentNode.variation_interval,
-                variation_min: this.currentNode.variation_min,
-                variation_max: this.currentNode.variation_max,
-                variation_step: this.currentNode.variation_step,
-                variation_values: this.currentNode.variation_values,
-                decimal_places: this.currentNode.decimal_places
-            };
-            
-            try {
-                // 如果是添加新节点，先检查节点ID
-                if (!this.isEditMode) {
-                    const exists = await this.checkNodeIdExists(this.currentNode.node_id);
-                    if (exists || this.nodeIdError) {
-                        return;
-                    }
-                }
-                
-                const url = this.isEditMode ? `/node/${this.currentNode.id}/edit/` : '/node/add/';
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.getCsrfToken()
-                    },
-                    body: JSON.stringify(nodeData)
-                });
-                const data = await response.json();
-                if (data.success) {
-                    this.modal.hide();
-                    await this.loadNodes();
-                    this.needsRestart = true;
-                    this.nodeIdError = '';
-                } else {
-                    if (data.error.includes('节点ID')) {
-                        this.nodeIdError = data.error;
-                    } else {
-                        alert('保存失败: ' + data.error);
-                    }
-                }
-            } catch (error) {
-                console.error('Error saving node:', error);
-                alert('保存失败');
-            }
-        },
-        async confirmDelete(node) {
-            this.showConfirmDialog({
-                type: 'danger',
-                iconClass: 'bi-trash',
-                title: '确认删除节点',
-                message: '此操作将永久删除该节点，且无法恢复。',
-                confirmText: '确认删除',
-                node: node,
-                callback: async () => {
-                    try {
-                        const response = await fetch(`/node/${node.id}/delete/`, {
-                            method: 'POST',
-                            headers: {
-                                'X-CSRFToken': this.getCsrfToken()
-                            }
-                        });
-                        const data = await response.json();
-                        if (data.success) {
-                            await this.loadNodes();
-                            this.needsRestart = true;
-                            this.showSuccess('节点已删除');
-                        } else {
-                            this.showError('删除失败: ' + data.error);
-                        }
-                    } catch (error) {
-                        console.error('Error deleting node:', error);
-                        this.showError('删除失败');
-                    }
-                }
-            });
-        },
-        applyRulePreset(key) {
-            const rule = this.rulePresets[key]
-            if (!rule) return
-
-            this.currentNode.variation_type = rule.type
-            this.currentNode.variation_interval = rule.interval
-
-            if (['random', 'linear', 'cycle'].includes(rule.type)) {
-                this.currentNode.variation_min = rule.min
-                this.currentNode.variation_max = rule.max
-                if (rule.type === 'linear' || rule.type === 'cycle') {
-                    this.currentNode.variation_step = rule.step
-                }
-            } else if (rule.type === 'discrete') {
-                this.currentNode.variation_values = rule.values
-            }
-
-            if (!this.currentNode.description) {
-                this.currentNode.description = rule.description
-            }
-
-            if (!this.currentNode.value) {
-                if (rule.type === 'discrete') {
-                    try {
-                        const values = JSON.parse(rule.values)
-                        this.currentNode.value = values[0]
-                    } catch (e) {}
-                } else {
-                    this.currentNode.value = rule.min
-                }
-            }
-        },
-        getNodeTypeDisplay(type) {
-            return this.nodeTypes.find(t => t.value === type)?.label || type
-        },
-        getDataTypeDisplay(type) {
-            return this.dataTypes.find(t => t.value === type)?.label || type
-        },
-        getVariationTypeDisplay(type) {
-            return this.variationTypes.find(t => t.value === type)?.label || type
-        },
-        getCsrfToken() {
-            return document.querySelector('[name=csrfmiddlewaretoken]')?.value
-        },
-        async refreshNodeValues() {
-            try {
-                const response = await fetch('/node/list/')
-                const data = await response.json()
-                if (data.success) {
-                    this.nodes = data.nodes
-                    this.serverRunning = data.server_running
-                    
-                    if (!this.serverRunning) {
-                        console.warn('OPC UA Server is not running')
-                    }
-                }
-            } catch (error) {
-                console.error('Error refreshing node values:', error)
-            }
-        },
-        startAutoRefresh() {
-            this.refreshInterval = setInterval(() => {
-                this.refreshNodeValues()
-            }, 1000)
-        },
-        stopAutoRefresh() {
-            if (this.refreshInterval) {
-                clearInterval(this.refreshInterval)
-                this.refreshInterval = null
-            }
-        },
-        async restartServer() {
-            this.showConfirmDialog({
-                type: 'warning',
-                iconClass: 'bi-exclamation-triangle',
-                title: '确认重启服务器',
-                message: '重启服务器将会中断所有当前连接，是否继续？',
-                confirmText: '确认重启',
-                callback: async () => {
-                    this.isRestarting = true;
-                    try {
-                        await fetch('{% url "server-stop" %}', {
-                            method: 'GET',
-                            headers: { 'X-CSRFToken': this.getCsrfToken() }
-                        });
-                        
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                        
-                        await fetch('{% url "server-start" %}', {
-                            method: 'GET',
-                            headers: { 'X-CSRFToken': this.getCsrfToken() }
-                        });
-                        
-                        this.needsRestart = false;
-                        await this.loadNodes();
-                        this.showSuccess('服务器已重启完成');
-                    } catch (error) {
-                        console.error('Error restarting server:', error);
-                        this.showError('重启服务器失败');
-                    } finally {
-                        this.isRestarting = false;
-                    }
-                }
-            });
-        },
-        async checkNodeIdExists(nodeId) {
-            if (!nodeId) return false;
-            
-            this.isCheckingNodeId = true;
-            this.nodeIdError = '';
-            
-            try {
-                if (!this.validateNodeId(nodeId)) {
-                    this.nodeIdError = '节点ID格式无效，正确格式如：ns=1;i=1000';
-                    return true;
-                }
-                
-                const existingNode = this.nodes.find(node => node.node_id === nodeId);
-                if (existingNode) {
-                    this.nodeIdError = '节点ID已存在';
-                    return true;
-                }
-                
-                return false;
-            } finally {
-                this.isCheckingNodeId = false;
-            }
-        },
-        
-        validateNodeId(nodeId) {
-            if (!nodeId) return false;
-            
-            // 本格式检查：必须包含命名空间
-            if (!nodeId.startsWith('ns=')) {
-                return false;
-            }
-            
-            // 分解节点ID
-            const parts = nodeId.split(';');
-            if (parts.length !== 2) {
-                return false;
-            }
-            
-            // 检查命名空间部分
-            const nsMatch = parts[0].match(/^ns=(\d+)$/);
-            if (!nsMatch) {
-                return false, "命名空间格式无效，必须是数字";
-            }
-            
-            // 检查标识符部分
-            const idPart = parts[1];
-            
-            // 数字标识符：i=123
-            if (idPart.startsWith('i=')) {
-                return /^i=\d+$/.test(idPart);
-            }
-            
-            // 字符串标识符：s=MyNode
-            if (idPart.startsWith('s=')) {
-                return idPart.length > 2;  // 至少要有一个字符
-            }
-            
-            // GUID标识符：g=09087e75-8e5e-499b-954f-f2a9603db28a
-            if (idPart.startsWith('g=')) {
-                const guidPattern = /^g=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                return guidPattern.test(idPart);
-            }
-            
-            // 进制标识符：b=SGVsbG8gV29ybGQ=
-            if (idPart.startsWith('b=')) {
-                const base64Pattern = /^b=[A-Za-z0-9+/]+=*$/;
-                return base64Pattern.test(idPart);
-            }
-            
-            return false;
-        },
-        validateForm() {
-            let isValid = true;
-            this.formErrors = {
-                name: '',
-                nodeId: '',
-                value: ''
-            };
-            
-            // 验证名称
-            if (!this.currentNode.name) {
-                this.formErrors.name = '请输入节点名称';
-                isValid = false;
-            }
-            
-            // 验证节点ID（仅在新建时）
-            if (!this.isEditMode) {
-                if (!this.currentNode.node_id) {
-                    this.formErrors.nodeId = '请输入节点ID';
-                    isValid = false;
-                } else if (this.nodeIdError) {
-                    this.formErrors.nodeId = this.nodeIdError;
-                    isValid = false;
-                }
-            }
-            
-            // 如果是变量节点，验证数据类型
-            if (this.currentNode.node_type === 'variable' && !this.currentNode.data_type) {
-                this.formErrors.value = '请选择数据类型';
-                isValid = false;
-            }
-            
-            return isValid;
-        },
-        showConfirmDialog(options) {
-            this.confirmDialog = {
-                ...this.confirmDialog,
-                ...options
-            };
-            this.confirmModal.show();
-        },
-        
-        handleConfirm() {
-            if (this.confirmDialog.callback) {
-                this.confirmDialog.callback();
-            }
-            this.confirmModal.hide();
-        },
-        isValueInRange() {
-            if (this.currentNode.node_type !== 'variable' || !this.currentNode.value) {
-                return false;
-            }
-
-            const value = this.currentNode.value;
-            const dataType = this.currentNode.data_type;
-
-            try {
-                switch(dataType) {
-                    case 'double':
-                    case 'float': {
-                        const num = parseFloat(value);
-                        if (isNaN(num)) return false;
-                        const range = this.valueRanges[dataType];
-                        return num >= range.min && num <= range.max;
-                    }
-                    case 'int32':
-                    case 'int64':
-                    case 'uint16':
-                    case 'uint32':
-                    case 'uint64': {
-                        let num;
-                        try {
-                            num = BigInt(value);
-                        } catch {
-                            this.formErrors.value = '请输入有效的整数';
-                            return false;
-                        }
-                        const range = this.valueRanges[dataType];
-                        return num >= range.min && num <= range.max;
-                    }
-                    case 'boolean':
-                        return ['true', 'false', '0', '1'].includes(value.toLowerCase());
-                    case 'datetime':
-                        return !isNaN(Date.parse(value));
-                    case 'array':
-                        try {
-                            JSON.parse(value);
-                            return true;
-                        } catch {
-                            return false;
-                        }
-                    case 'string':
-                        return true;  // 字符串类型没有范围限制
-                    default:
+                // 如果不允许匿名访问，检查用户名和密码
+                if (!this.serverForm.allow_anonymous) {
+                    if (!this.serverForm.username || !this.serverForm.password) {
                         return false;
-                }
-            } catch {
-                return false;
-            }
-        },
-        
-        validateValue() {
-            if (this.currentNode.node_type !== 'variable' || !this.currentNode.value) {
-                this.formErrors.value = '';
-                return;
-            }
-
-            const value = this.currentNode.value;
-            const dataType = this.currentNode.data_type;
-
-            try {
-                switch(dataType) {
-                    case 'double':
-                    case 'float': {
-                        const num = parseFloat(value);
-                        if (isNaN(num)) {
-                            this.formErrors.value = '输入有效的数字';
-                            return;
-                        }
-                        const range = this.valueRanges[dataType];
-                        if (num < range.min || num > range.max) {
-                            this.formErrors.value = `数值必须在 ${range.min} 到 ${range.max} 之间`;
-                            return;
-                        }
-                        break;
                     }
-                    case 'int32':
-                    case 'int64':
-                    case 'uint16':
-                    case 'uint32':
-                    case 'uint64': {
-                        let num;
-                        try {
-                            num = BigInt(value);
-                        } catch {
-                            this.formErrors.value = '请输入有效的整数';
-                            return;
-                        }
-                        const range = this.valueRanges[dataType];
-                        if (num < range.min || num > range.max) {
-                            this.formErrors.value = `数值必须在 ${range.min} 到 ${range.max} 之间`;
-                            return;
-                        }
-                        break;
-                    }
-                    case 'boolean':
-                        if (!['true', 'false', '0', '1'].includes(value.toLowerCase())) {
-                            this.formErrors.value = '请输入 true、false、1 或 0';
-                            return;
-                        }
-                        break;
-                    case 'datetime':
-                        if (isNaN(Date.parse(value))) {
-                            this.formErrors.value = '请入有效的日期时间格式（如：2024-01-01T00:00:00）';
-                            return;
-                        }
-                        break;
-                    case 'array':
-                        try {
-                            JSON.parse(value);
-                        } catch {
-                            this.formErrors.value = '请输入有效的JSON数组格式（如：[1,2,3]）';
-                            return;
-                        }
-                        break;
                 }
-                this.formErrors.value = '';
-            } catch (e) {
-                this.formErrors.value = '值格式无效';
-            }
-        },
-        validateBatchSettings() {
-            this.batchErrors = {
-                nameTemplate: '',
-                nodeIdTemplate: '',
-                range: '',
-                value: '',
-                duplicates: []
-            };
-
-            // 检查名称模板
-            if (!this.batchSettings.nameTemplate) {
-                this.batchErrors.nameTemplate = '请输入节点名称模板';
-                return false;
-            }
-            if (!this.batchSettings.nameTemplate.includes('{n}')) {
-                this.batchErrors.nameTemplate = '名称模板必须包含{n}作为序号占位符';
-                return false;
-            }
-
-            // 检查节点ID模板
-            if (!this.batchSettings.nodeIdTemplate) {
-                this.batchErrors.nodeIdTemplate = '请输入节点ID模板';
-                return false;
-            }
-            if (!this.batchSettings.nodeIdTemplate.includes('{n}')) {
-                this.batchErrors.nodeIdTemplate = '节点ID模板必须包含{n}作为序号占位符';
-                return false;
-            }
-
-            // 检查序号范围
-            if (!this.batchSettings.startIndex || !this.batchSettings.endIndex) {
-                this.batchErrors.range = '请输入起始和结束序号';
-                return false;
-            }
-            if (this.batchSettings.startIndex > this.batchSettings.endIndex) {
-                this.batchErrors.range = '起始序号不能大于结束序号';
-                return false;
-            }
-            if (this.batchSettings.endIndex - this.batchSettings.startIndex > 1000) {
-                this.batchErrors.range = '一次最多只能创建1000个节点';
-                return false;
-            }
-
-            // 检查初始值
-            if (this.batchSettings.nodeType === 'variable') {
-                if (!this.batchSettings.valueTemplate) {
-                    this.batchErrors.value = '请输入初始值模板';
+                
+                // 检查采样间隔
+                if (this.serverForm.min_sampling_interval < 100) {
                     return false;
                 }
-                // 检查初始值格式
+                
+                return true;
+            }
+        },
+        methods: {
+            async loadServers() {
                 try {
-                    const testValue = this.batchSettings.valueTemplate.replace('{n}', '1');
-                    if (this.batchSettings.dataType === 'double' || this.batchSettings.dataType === 'float') {
-                        if (isNaN(parseFloat(testValue))) {
-                            this.batchErrors.value = '初始值必须是有效的数字';
-                            return false;
-                        }
-                    } else if (this.batchSettings.dataType.startsWith('int') || 
-                              this.batchSettings.dataType.startsWith('uint')) {
-                        if (!Number.isInteger(Number(testValue))) {
-                            this.batchErrors.value = '初始值必须是整数';
-                            return false;
-                        }
+                    const response = await fetch('/server/list/');
+                    const data = await response.json();
+                    if (data.success) {
+                        this.servers = data.servers;
                     }
-                } catch (e) {
-                    this.batchErrors.value = '初始值格式无效';
-                    return false;
+                } catch (error) {
+                    console.error('Error loading servers:', error);
+                    this.showError('加载服务器列表失败');
                 }
-            }
+            },
 
-            // 检查节点ID格式和重复
-            const nodeIds = new Set();
-            const existingNodeIds = new Set(this.nodes.map(node => node.node_id));
-            
-            for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
-                const nodeId = this.batchSettings.nodeIdTemplate.replace('{n}', i);
+            async loadNodes() {
+                if (!this.currentServer) return;
                 
-                // 检查节点ID格式
-                if (!this.validateNodeId(nodeId)) {
-                    this.batchErrors.nodeIdTemplate = `节点ID格式无效: ${nodeId}`;
-                    return false;
-                }
-                
-                // 检查是否与现有节点重复
-                if (existingNodeIds.has(nodeId)) {
-                    this.batchErrors.duplicates.push(nodeId);
-                }
-                
-                // 检查批量创建内部是否有重复
-                if (nodeIds.has(nodeId)) {
-                    this.batchErrors.nodeIdTemplate = `批量创建中存在重复的节点ID: ${nodeId}`;
-                    return false;
-                }
-                nodeIds.add(nodeId);
-            }
-
-            return this.batchErrors.duplicates.length === 0;
-        },
-        showBatchAddModal() {
-            // 重置批量设置和错误
-            this.batchSettings = {
-                nameTemplate: '',
-                nodeIdTemplate: '',
-                startIndex: 1,
-                endIndex: 1,
-                nodeType: 'variable',
-                dataType: 'double',
-                valueTemplate: '',
-                variationType: 'none',
-                variationMin: null,
-                variationMax: null,
-                variationStep: null,
-                variationInterval: 1000,
-                decimalPlaces: 2
-            };
-            this.batchErrors = {
-                nameTemplate: '',
-                nodeIdTemplate: '',
-                range: '',
-                value: '',
-                duplicates: []
-            };
-            this.batchAddModal.show();
-        },
-        async saveBatchNodes() {
-            if (!this.isBatchFormValid || this.isProcessing) return;
-            
-            // 执行验证
-            if (!this.validateBatchSettings()) {
-                if (this.batchErrors.duplicates.length > 0) {
-                    if (!confirm(`以下节点ID已存在，是否继续？\n${this.batchErrors.duplicates.join('\n')}`)) {
-                        return;
+                this.isLoading = true;
+                try {
+                    const response = await fetch(`/node/list/?server_id=${this.currentServer.id}`);
+                    const data = await response.json();
+                    if (data.success) {
+                        this.nodes = data.nodes;
                     }
-                } else {
-                    return;
+                } catch (error) {
+                    console.error('Error loading nodes:', error);
+                    this.showError('加载节点列表失败');
+                } finally {
+                    this.isLoading = false;
                 }
-            }
-            
-            this.isProcessing = true;
-            const nodes = [];
-            const errors = [];
+            },
 
-            try {
-                for (let i = this.batchSettings.startIndex; i <= this.batchSettings.endIndex; i++) {
-                    const node = {
-                        name: this.batchSettings.nameTemplate.replace('{n}', i),
-                        node_id: this.batchSettings.nodeIdTemplate.replace('{n}', i),
-                        node_type: this.batchSettings.nodeType,
-                        data_type: this.batchSettings.dataType,
-                        value: this.batchSettings.valueTemplate ? 
-                               this.batchSettings.valueTemplate.replace('{n}', i) : '',
-                        variation_type: this.batchSettings.variationType,
-                        variation_interval: this.batchSettings.variationInterval,
-                        variation_min: this.batchSettings.variationMin,
-                        variation_max: this.batchSettings.variationMax,
-                        variation_step: this.batchSettings.variationStep,
-                        decimal_places: this.batchSettings.decimalPlaces
+            showServerModal(action, server = null) {
+                this.serverAction = action;
+                this.testResult = { status: '', message: '', success: false };
+                
+                if (action === 'edit' && server) {
+                    // 编辑模式：复制服务器数据到表单
+                    this.serverForm = {
+                        id: server.id,
+                        name: server.name,
+                        endpoint: server.endpoint,
+                        port: server.port,
+                        uri: server.uri,
+                        allow_anonymous: server.allow_anonymous,
+                        username: server.username || '',
+                        password: '',  // 出于安全考虑，不回显密码
+                        min_sampling_interval: server.min_sampling_interval,
+                        max_connections: server.max_connections || 0,
+                        security_policy: server.security_policy || 'None'
                     };
+                } else {
+                    // 添加模式：重置表单
+                    this.resetForm();
+                }
+                
+                this.serverModal.show();
+            },
 
-                    try {
-                        const response = await fetch('/node/add/', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': this.getCsrfToken()
-                            },
-                            body: JSON.stringify(node)
-                        });
-                        const data = await response.json();
-                        if (data.success) {
-                            nodes.push(data.data);
-                        } else {
-                            errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${data.error}`);
+            async handleServerAction() {
+                if (this.isProcessing || !this.validateForm()) return;
+                
+                this.isProcessing = true;
+                try {
+                    const url = this.serverAction === 'add' 
+                        ? '/server/add/'
+                        : `/server/${this.serverForm.id}/edit/`;
+                    
+                    // 创建要发送的数据对象
+                    const formData = { ...this.serverForm };
+                    
+                    // 如果是编辑模式且密码为空，则不发送密码字段
+                    if (this.serverAction === 'edit' && !formData.password) {
+                        delete formData.password;
+                    }
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.getCsrfToken()
+                        },
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showSuccess(
+                            this.serverAction === 'add' 
+                                ? '服务器添加成功' 
+                                : '服务器配置已更新'
+                        );
+                        this.serverModal.hide();
+                        await this.loadServers();
+                        this.resetForm();
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error handling server action:', error);
+                    this.showError('操作失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            async startServer(server) {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    const response = await fetch(`/server/${server.id}/start/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': this.getCsrfToken()
                         }
-                    } catch (error) {
-                        errors.push(`节点 ${node.name} (${node.node_id}) 创建失败: ${error.message}`);
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        server.is_running = true;
+                        this.showSuccess('服务器已启动');
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error starting server:', error);
+                    this.showError('启动服务器失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            async stopServer(server) {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    const response = await fetch(`/server/${server.id}/stop/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': this.getCsrfToken()
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        server.is_running = false;
+                        this.showSuccess('服务器已停止');
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error stopping server:', error);
+                    this.showError('停止服务器失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            confirmDeleteServer(server) {
+                this.confirmDialog = {
+                    title: '确认删除服务器',
+                    message: `确定要删除服务器"${server.name}"吗？此操作不可恢复。`,
+                    callback: () => this.deleteServer(server)
+                };
+                this.confirmModal.show();
+            },
+
+            async deleteServer(server) {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    const response = await fetch(`/server/${server.id}/delete/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': this.getCsrfToken()
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        if (this.currentServer?.id === server.id) {
+                            this.currentServer = null;
+                        }
+                        await this.loadServers();
+                        this.showSuccess('服务器已删除');
+                        this.confirmModal.hide();
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error deleting server:', error);
+                    this.showError('删除服务器失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            selectServer(server) {
+                this.currentServer = server;
+                this.loadNodes();
+            },
+
+            async refreshServers() {
+                await this.loadServers();
+                if (this.currentServer) {
+                    const server = this.servers.find(s => s.id === this.currentServer.id);
+                    if (server) {
+                        this.currentServer = server;
                     }
                 }
+            },
 
-                if (nodes.length > 0) {
-                    await this.loadNodes();
-                    this.needsRestart = true;
-                    this.batchAddModal.hide();
-                    this.showSuccess(`成功创建 ${nodes.length} 个节点`);
+            refreshNodes() {
+                this.loadNodes();
+            },
+
+            startAutoRefresh() {
+                this.stopAutoRefresh();
+                this.refreshInterval = setInterval(async () => {
+                    await this.refreshServers();
+                    if (this.currentServer?.is_running) {
+                        await this.loadNodes();
+                    }
+                }, 5000);
+            },
+
+            stopAutoRefresh() {
+                if (this.refreshInterval) {
+                    clearInterval(this.refreshInterval);
+                    this.refreshInterval = null;
                 }
+            },
 
-                if (errors.length > 0) {
-                    this.showError(`部分节点创建失败:\n${errors.join('\n')}`);
+            handleConfirm() {
+                if (this.confirmDialog.callback) {
+                    this.confirmDialog.callback();
                 }
-            } finally {
-                this.isProcessing = false;
-            }
-        },
-        showServerConfigModal() {
-            // 加载当前配置
-            this.loadServerConfig();
-            this.serverConfigModal.show();
-        },
-        async loadServerConfig() {
-            try {
-                const response = await fetch('/server/config/');
-                const data = await response.json();
-                if (data.success) {
-                    this.serverConfig = { ...data.config };
-                } else {
-                    this.showError('加载服务器配置失败: ' + data.error);
-                }
-            } catch (error) {
-                console.error('Error loading server config:', error);
-                this.showError('加载服务器配置失败');
-            }
-        },
-        validateServerConfig() {
-            this.configErrors = {
-                name: '',
-                port: '',
-                uri: '',
-                host: '',
-                username: '',
-                password: '',
-                minPublishingInterval: '',
-                defaultNamespace: ''
-            };
+            },
 
-            // 验证服务器名称
-            if (!this.serverConfig.name) {
-                this.configErrors.name = '请输入服务器名称';
-                return false;
-            }
-
-            // 验证端口
-            if (!this.serverConfig.port) {
-                this.configErrors.port = '请输入端口号';
-                return false;
-            }
-            if (this.serverConfig.port < 1024 || this.serverConfig.port > 65535) {
-                this.configErrors.port = '端口号必须在1024-65535之间';
-                return false;
-            }
-
-            // 验证URI
-            if (!this.serverConfig.uri) {
-                this.configErrors.uri = '请输入URI';
-                return false;
-            }
-            if (!this.serverConfig.uri.startsWith('urn:')) {
-                this.configErrors.uri = 'URI必须以urn:开头';
-                return false;
-            }
-
-            // 验证主机地址
-            if (!this.serverConfig.host) {
-                this.configErrors.host = '请输入主机地址';
-                return false;
-            }
-            const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$|^localhost$/;
-            if (!ipPattern.test(this.serverConfig.host)) {
-                this.configErrors.host = '请输入有效的IP地址或localhost';
-                return false;
-            }
-
-            // 验证认证信息
-            if (!this.serverConfig.allowAnonymous) {
-                if (!this.serverConfig.username) {
-                    this.configErrors.username = '请输入用户名';
-                    return false;
-                }
-                if (!this.serverConfig.password) {
-                    this.configErrors.password = '请输入密码';
-                    return false;
-                }
-            }
-
-            // 验证发布间隔
-            if (this.serverConfig.minPublishingInterval < 100) {
-                this.configErrors.minPublishingInterval = '最小发布间隔不能小于100毫秒';
-                return false;
-            }
-
-            // 验证命名空间
-            if (this.serverConfig.defaultNamespace < 1 || 
-                this.serverConfig.defaultNamespace > 65535) {
-                this.configErrors.defaultNamespace = '命名空间必须在1-65535之间';
-                return false;
-            }
-
-            return true;
-        },
-        async saveServerConfig() {
-            if (!this.isConfigValid || this.isProcessing) return;
-            
-            if (!this.validateServerConfig()) {
-                return;
-            }
-            
-            this.isProcessing = true;
-            try {
-                const response = await fetch('/server/config/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.getCsrfToken()
-                    },
-                    body: JSON.stringify(this.serverConfig)
+            showSuccess(message) {
+                this.addToast({
+                    type: 'success',
+                    message: message
                 });
-                
-                const data = await response.json();
-                if (data.success) {
-                    this.serverConfigModal.hide();
-                    this.showSuccess('服务器配置已保存，需要重启服务器生效');
-                    this.needsRestart = true;
-                } else {
-                    this.showError('保存配置失败: ' + data.error);
-                }
-            } catch (error) {
-                console.error('Error saving server config:', error);
-                this.showError('保存配置失败');
-            } finally {
-                this.isProcessing = false;
-            }
-        }
-    },
-    mounted() {
-        this.modal = new bootstrap.Modal(this.$refs.nodeModal)
-        this.confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'))
-        this.batchAddModal = new bootstrap.Modal(this.$refs.batchAddModal)
-        this.serverConfigModal = new bootstrap.Modal(this.$refs.serverConfigModal)
-        this.loadNodes()
-        this.startAutoRefresh()
-        
-        // 添加全局的toast容器
-        const toastContainer = document.createElement('div')
-        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3'
-        toastContainer.style.zIndex = '1050'
-        document.body.appendChild(toastContainer)
-    },
-    beforeUnmount() {
-        this.stopAutoRefresh()
-    }
-})
+            },
 
-app.mount('#app')
+            showError(message) {
+                this.addToast({
+                    type: 'error',
+                    message: message
+                });
+            },
+
+            addToast(toast) {
+                toast.show = true;
+                this.toasts.push(toast);
+                
+                // 只有成功提示会自动消失
+                if (toast.type === 'success') {
+                    setTimeout(() => {
+                        this.removeToast(this.toasts.indexOf(toast));
+                    }, this.toastTimeout);
+                }
+            },
+
+            removeToast(index) {
+                if (index > -1) {
+                    this.toasts.splice(index, 1);
+                }
+            },
+
+            getCsrfToken() {
+                const name = 'csrftoken';
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            },
+
+            getNodeTypeDisplay(type) {
+                const types = {
+                    'variable': '变量',
+                    'object': '对象',
+                    'method': '方法'
+                };
+                return types[type] || type;
+            },
+
+            getDataTypeDisplay(type) {
+                const types = {
+                    'double': '双精度浮点数',
+                    'float': '单精度浮点数',
+                    'int32': '32位整数',
+                    'int64': '64位整数',
+                    'uint32': '32位无符号整数',
+                    'uint64': '64位无符号整数',
+                    'boolean': '布尔值',
+                    'string': '字符串',
+                    'datetime': '日期时间',
+                    'bytestring': '字节串'
+                };
+                return types[type] || type;
+            },
+
+            getVariationTypeDisplay(type) {
+                const types = {
+                    'none': '无变化',
+                    'random': '随机变化',
+                    'increment': '递增',
+                    'decrement': '递减',
+                    'sine': '正弦波',
+                    'square': '方波',
+                    'triangle': '三角波',
+                    'sawtooth': '锯齿波',
+                    'discrete': '离散值'
+                };
+                return types[type] || type;
+            },
+
+            formatNodeValue(node) {
+                if (!node.value && node.value !== 0) return '-';
+                
+                switch (node.data_type) {
+                    case 'double':
+                    case 'float':
+                        const value = parseFloat(node.value);
+                        return isNaN(value) ? '-' : value.toFixed(node.decimal_places || 2);
+                    case 'boolean':
+                        return node.value ? '是' : '否';
+                    case 'datetime':
+                        try {
+                            return new Date(node.value).toLocaleString('zh-CN');
+                        } catch {
+                            return node.value;
+                        }
+                    default:
+                        return node.value.toString();
+                }
+            },
+
+            updateSelectedServers() {
+                this.selectedServers = this.servers.filter(s => s.selected);
+            },
+
+            async batchStartServers() {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    for (const server of this.selectedServers) {
+                        if (!server.is_running) {
+                            await this.startServer(server);
+                        }
+                    }
+                    this.showSuccess('批量启动完成');
+                } catch (error) {
+                    console.error('Error in batch start:', error);
+                    this.showError('批量启动过程中出现错误');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            async batchStopServers() {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    for (const server of this.selectedServers) {
+                        if (server.is_running) {
+                            await this.stopServer(server);
+                        }
+                    }
+                    this.showSuccess('批量停止完成');
+                } catch (error) {
+                    console.error('Error in batch stop:', error);
+                    this.showError('批量停止过程中出现错误');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            confirmBatchDelete() {
+                this.confirmDialog = {
+                    title: '确认批量删除',
+                    message: `确定要删除选中的 ${this.selectedServers.length} 个服务器吗��此操作不可恢复。`,
+                    callback: () => this.batchDeleteServers()
+                };
+                this.confirmModal.show();
+            },
+
+            async batchDeleteServers() {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    for (const server of this.selectedServers) {
+                        if (!server.is_running) {
+                            await this.deleteServer(server);
+                        }
+                    }
+                    this.showSuccess('批量删除完成');
+                    this.confirmModal.hide();
+                } catch (error) {
+                    console.error('Error in batch delete:', error);
+                    this.showError('批量删除过程中出现错误');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            async testConnection() {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                this.testResult = { status: '', message: '', success: false };
+                
+                try {
+                    const response = await fetch('/server/test-connection/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.getCsrfToken()
+                        },
+                        body: JSON.stringify({
+                            ...this.serverForm,
+                            mode: this.serverAction,  // 添加模式信息
+                            original_id: this.serverAction === 'edit' ? this.serverForm.id : null  // 添加原始ID
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    this.testResult = {
+                        status: data.success ? 'success' : 'error',
+                        message: data.message,
+                        success: data.success
+                    };
+                } catch (error) {
+                    console.error('Error testing connection:', error);
+                    this.testResult = {
+                        status: 'error',
+                        message: '连接测试失败',
+                        success: false
+                    };
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            showImportModal() {
+                this.importPreview = [];
+                this.importOptions.overwrite = false;
+                this.importModal.show();
+            },
+
+            async handleFileSelect(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                try {
+                    const content = await file.text();
+                    const config = JSON.parse(content);
+                    
+                    // 验证配置文件格式
+                    if (!Array.isArray(config)) {
+                        throw new Error('无效的配置文件格式');
+                    }
+                    
+                    // 生成导入预览
+                    this.importPreview = await Promise.all(config.map(async server => ({
+                        ...server,
+                        exists: await this.checkServerExists(server.name)
+                    })));
+                } catch (error) {
+                    console.error('Error parsing config file:', error);
+                    this.showError('配置文件格式错误');
+                    event.target.value = '';
+                    this.importPreview = [];
+                }
+            },
+
+            async checkServerExists(name) {
+                return this.servers.some(s => s.name === name);
+            },
+
+            async importConfig() {
+                if (this.isProcessing) return;
+                
+                this.isProcessing = true;
+                try {
+                    const response = await fetch('/server/import/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.getCsrfToken()
+                        },
+                        body: JSON.stringify({
+                            servers: this.importPreview,
+                            options: this.importOptions
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        await this.loadServers();
+                        this.showSuccess('服务器配置导入成功');
+                        this.importModal.hide();
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error importing config:', error);
+                    this.showError('导入配置失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+
+            async exportConfig() {
+                try {
+                    const response = await fetch('/server/export/');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // 创建下载链接
+                        const blob = new Blob([JSON.stringify(data.config, null, 2)], 
+                                           { type: 'application/json' });
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'opcua_servers_config.json';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error exporting config:', error);
+                    this.showError('导出配置失败');
+                }
+            },
+
+            validateForm() {
+                this.formErrors = {};
+                let isValid = true;
+                
+                // 验证服务器名称
+                if (!this.serverForm.name) {
+                    this.formErrors.name = '���输入服务器名称';
+                    isValid = false;
+                }
+                
+                // 验证终端点
+                if (!this.serverForm.endpoint) {
+                    this.formErrors.endpoint = '请输入终端点';
+                    isValid = false;
+                }
+                
+                // 验证端口号
+                if (!this.serverForm.port) {
+                    this.formErrors.port = '请输入端口号';
+                    isValid = false;
+                } else if (this.serverForm.port < 1024 || this.serverForm.port > 65535) {
+                    this.formErrors.port = '端口号必须在1024-65535之间';
+                    isValid = false;
+                }
+                
+                // 验证URI
+                if (!this.serverForm.uri) {
+                    this.formErrors.uri = '请输入服务器URI';
+                    isValid = false;
+                } else if (!this.serverForm.uri.startsWith('urn:')) {
+                    this.formErrors.uri = 'URI必须以"urn:"开头';
+                    isValid = false;
+                }
+                
+                // 如果允许匿名访问，验证用户名和密码
+                if (!this.serverForm.allow_anonymous) {
+                    if (!this.serverForm.username) {
+                        this.formErrors.username = '请输入用户名';
+                        isValid = false;
+                    }
+                    // 只在添加模式或编辑模式下有输入密码时验证密码
+                    if (this.serverAction === 'add' || this.serverForm.password) {
+                        if (!this.serverForm.password) {
+                            this.formErrors.password = '请输入密码';
+                            isValid = false;
+                        }
+                    }
+                }
+                
+                return isValid;
+            },
+
+            resetForm() {
+                this.serverForm = {
+                    id: null,
+                    name: '',
+                    endpoint: '',
+                    port: 4840,
+                    uri: '',
+                    allow_anonymous: true,
+                    username: '',
+                    password: '',
+                    min_sampling_interval: 100,
+                    max_connections: 0,
+                    security_policy: 'None'
+                };
+                this.formErrors = {};
+                this.testResult = {
+                    status: '',
+                    message: '',
+                    success: false
+                };
+            }
+        },
+        async mounted() {
+            // 初始化Bootstrap模态框
+            this.serverModal = new bootstrap.Modal(this.$refs.serverModal);
+            this.confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
+            this.importModal = new bootstrap.Modal(this.$refs.importModal);
+            
+            // 加载服务器列表
+            await this.loadServers();
+            
+            // 启动自动刷新
+            this.startAutoRefresh();
+        },
+        beforeUnmount() {
+            this.stopAutoRefresh();
+        }
+    }).mount('#app');
 </script>
 {% endblock %} 

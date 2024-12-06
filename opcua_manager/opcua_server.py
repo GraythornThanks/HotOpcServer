@@ -7,41 +7,97 @@ from datetime import datetime
 import logging
 from django.conf import settings
 from django.db.models import Min
-from .models import OpcNode
+from .models import Node, OpcServer
 import json
 
 logger = logging.getLogger(__name__)
 
 class OpcUaServer:
-    _instance = None
-    _lock = threading.Lock()
+    _instances = {}  # 存储所有服务器实例
+    _lock = threading.Lock()  # 线程锁
 
-    def __new__(cls):
+    @classmethod
+    def get_instance(cls, server_id):
+        """获取服务器实例"""
+        return cls._instances.get(server_id)
+
+    @classmethod
+    def create_instance(cls, server_config):
+        """创建新的服务器实例"""
         with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance.server = None
-                cls._instance.running = False
-                cls._instance.stop_variation = False
-                cls._instance.variation_thread = None
-                cls._instance.nodes = {}  # 存储活动节点
-            return cls._instance
+            if server_config.id in cls._instances:
+                return cls._instances[server_config.id]
+            
+            instance = cls(server_config)
+            cls._instances[server_config.id] = instance
+            return instance
 
-    def __init__(self):
-        if not hasattr(self, 'initialized'):
-            self.server = Server()
-            self.server.set_endpoint("opc.tcp://0.0.0.0:4840/freeopcua/server/")
-            self.server.set_server_name("Hot OPC UA Server")
+    @classmethod
+    def remove_instance(cls, server_id):
+        """移除服务器实例"""
+        with cls._lock:
+            if server_id in cls._instances:
+                instance = cls._instances[server_id]
+                instance.stop()
+                del cls._instances[server_id]
+
+    def __init__(self, server_config):
+        """初始化OPC UA服务器"""
+        self.config = server_config
+        self.server = Server()
+        self.running = False
+        self.nodes = {}  # 存储节点对象
+        self.update_thread = None
+        self.stop_event = threading.Event()
+
+        # 配置服务器
+        endpoint = f"opc.tcp://{server_config.endpoint}:{server_config.port}"
+        self.server.set_endpoint(endpoint)
+        self.server.set_server_name(server_config.name)
+        self.server.set_security_policy([])  # 暂时不设置安全策略
+
+        # 设置服务器URI
+        uri = server_config.uri
+        idx = self.server.register_namespace(uri)
+
+        # 创建根节点
+        self.root = self.server.nodes.objects.add_folder(idx, server_config.name)
+
+    def add_node(self, node_config):
+        """添加节点"""
+        try:
+            idx = self.server.get_namespace_index(self.config.uri)
             
-            # 创建地址空间
-            idx = self.server.register_namespace("http://examples.freeopcua.github.io")
-            self.objects = self.server.nodes.objects
-            
-            self.initialized = True
-            self.running = False
-            self.stop_variation = False
-            self.variation_thread = None
-            self.nodes = {}  # 存储活动节点
+            if node_config.node_type == 'variable':
+                node = self.root.add_variable(idx, node_config.name, self._get_initial_value(node_config))
+                node.set_writable()
+            elif node_config.node_type == 'object':
+                node = self.root.add_object(idx, node_config.name)
+            else:
+                logger.error(f"Unsupported node type: {node_config.node_type}")
+                return None
+
+            self.nodes[node_config.id] = {
+                'node': node,
+                'config': node_config
+            }
+            return node
+
+        except Exception as e:
+            logger.error(f"Error adding node: {e}")
+            return None
+
+    def remove_node(self, node_id):
+        """移除节点"""
+        if node_id in self.nodes:
+            try:
+                node_info = self.nodes[node_id]
+                node_info['node'].delete()
+                del self.nodes[node_id]
+                return True
+            except Exception as e:
+                logger.error(f"Error removing node: {e}")
+        return False
 
     def start(self):
         """启动服务器"""
@@ -49,324 +105,141 @@ class OpcUaServer:
             try:
                 self.server.start()
                 self.running = True
-                self.stop_variation = False
-                self.nodes.clear()  # 清除旧的节点缓存
-                
-                # 从数据库重建所有节点
-                from .models import OpcNode
-                from django.db import transaction
-                
-                with transaction.atomic():
-                    nodes = OpcNode.objects.all()
-                    logger.info(f"Found {len(nodes)} nodes in database")
-                    
-                    for node in nodes:
-                        try:
-                            # 解析节点ID
-                            node_id = ua.NodeId.from_string(node.node_id)
-                            logger.info(f"Creating node: {node.node_id} ({node.name})")
-                            
-                            if node.node_type == 'variable':
-                                # 创建��量节点
-                                initial_value = self._convert_value(node.value, node.data_type)
-                                var = self.objects.add_variable(
-                                    node_id,
-                                    node.name,
-                                    initial_value,
-                                    varianttype=self._get_ua_data_type(node.data_type)
-                                )
-                                var.set_writable()
-                                self.nodes[str(node_id)] = var
-                                logger.info(f"Created variable node: {node.node_id} with value {initial_value}")
-                            else:
-                                # 创建对象节点
-                                obj = self.objects.add_object(node_id, node.name)
-                                self.nodes[str(node_id)] = obj
-                                logger.info(f"Created object node: {node.node_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to create node {node.node_id}: {str(e)}")
-                
-                # 启动变化值线程
-                self.variation_thread = threading.Thread(target=self._variation_loop)
-                self.variation_thread.daemon = True
-                self.variation_thread.start()
-                
-                logger.info("OPC UA Server started successfully")
+                self.stop_event.clear()
+                self.update_thread = threading.Thread(target=self._update_values)
+                self.update_thread.daemon = True
+                self.update_thread.start()
+                logger.info(f"Server {self.config.name} started")
+                return True
             except Exception as e:
-                logger.error(f"Failed to start OPC UA server: {str(e)}")
-                self.running = False
-                raise
-    
-    def _convert_value(self, value, data_type):
-        """转换值到指定的数据类型"""
-        try:
-            if value is None:
-                return self._get_default_value(data_type)
-                
-            if data_type == 'array':
-                try:
-                    return json.loads(value)
-                except json.JSONDecodeError:
-                    return []
-            elif data_type in ['double', 'float']:
-                return float(value)
-            elif data_type in ['int32', 'int64']:
-                return int(value)
-            elif data_type in ['uint16', 'uint32', 'uint64']:
-                val = int(value)
-                return max(0, val)  # 确保非负
-            elif data_type == 'boolean':
-                return str(value).lower() in ('true', '1', 'yes', 'on')
-            elif data_type == 'datetime':
-                return datetime.fromisoformat(value)
-            elif data_type == 'string':
-                return str(value)
-            else:
-                return value
-        except (ValueError, TypeError) as e:
-            logger.error(f'Error converting value {value} to type {data_type}: {str(e)}')
-            return self._get_default_value(data_type)
-    
-    def _get_default_value(self, data_type):
-        """获取数据类型的默认值"""
-        defaults = {
-            'double': 0.0,
-            'float': 0.0,
-            'int32': 0,
-            'int64': 0,
-            'uint16': 0,
-            'uint32': 0,
-            'uint64': 0,
-            'boolean': False,
-            'string': '',
-            'datetime': datetime.now(),
-            'array': [],
-        }
-        return defaults.get(data_type, None)
-    
-    def _get_ua_data_type(self, data_type):
-        """获取OPC UA数据类型"""
-        type_mapping = {
-            'double': ua.VariantType.Double,
-            'float': ua.VariantType.Float,
-            'int32': ua.VariantType.Int32,
-            'int64': ua.VariantType.Int64,
-            'uint16': ua.VariantType.UInt16,
-            'uint32': ua.VariantType.UInt32,
-            'uint64': ua.VariantType.UInt64,
-            'boolean': ua.VariantType.Boolean,
-            'string': ua.VariantType.String,
-            'datetime': ua.VariantType.DateTime,
-            'array': ua.VariantType.Double,  # 默认使用Double类型数组
-        }
-        return type_mapping.get(data_type, ua.VariantType.String)
+                logger.error(f"Error starting server: {e}")
+                return False
+        return True
 
     def stop(self):
         """停止服务器"""
         if self.running:
-            self.stop_variation = True
-            if self.variation_thread:
-                self.variation_thread.join(timeout=5.0)
-            self.server.stop()
-            self.running = False
-            self.nodes.clear()  # 清除节点缓存
-            logger.info("OPC UA Server stopped")
-
-    def add_variable(self, node_id, name, value, varianttype=None):
-        """添加变量节点"""
-        try:
-            var = self.objects.add_variable(node_id, name, value, varianttype=varianttype)
-            var.set_writable()
-            self.nodes[str(node_id)] = var  # 缓存节点
-            return var
-        except Exception as e:
-            logger.error(f"Failed to add variable node {node_id}: {str(e)}")
-            raise
-
-    def add_object(self, node_id, name):
-        """添加对象节点"""
-        try:
-            obj = self.objects.add_object(node_id, name)
-            self.nodes[str(node_id)] = obj  # 缓存节点
-            return obj
-        except Exception as e:
-            logger.error(f"Failed to add object node {node_id}: {str(e)}")
-            raise
-
-    def get_node(self, node_id):
-        """获取节点"""
-        try:
-            node_id_str = str(node_id)
-            # 首先从缓存中获取
-            if node_id_str in self.nodes:
-                return self.nodes[node_id_str]
-            
-            # 如果缓存中没有，尝试从服务器获取
-            node = self.server.get_node(node_id)
-            if node and node.get_browse_name():
-                self.nodes[node_id_str] = node  # 缓存有效节点
-                return node
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get node {node_id}: {str(e)}")
-            return None
-
-    def remove_node(self, node_id):
-        """删除节点"""
-        try:
-            node_id_str = str(node_id)
-            if node_id_str in self.nodes:
-                node = self.nodes[node_id_str]
-                node.delete()
-                del self.nodes[node_id_str]  # 从缓存中移除
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to remove node {node_id}: {str(e)}")
-            return False
-
-    def _rebuild_nodes(self):
-        """重建所有节点"""
-        try:
-            from .models import OpcNode
-            nodes = OpcNode.objects.all()
-            
-            for node in nodes:
-                try:
-                    # 尝试获取节点，如果不存在则创建
-                    node_id = ua.NodeId.from_string(node.node_id)
-                    ua_node = self.get_node(node_id)
-                    
-                    if not ua_node:  # 节点不存在，创建新节点
-                        if node.node_type == 'variable':
-                            # 获取初始值
-                            initial_value = node.get_typed_value()
-                            if initial_value is None:
-                                if node.data_type in ['double', 'float']:
-                                    initial_value = 0.0
-                                elif node.data_type in ['int32', 'int64', 'uint16', 'uint32', 'uint64']:
-                                    initial_value = 0
-                                elif node.data_type == 'boolean':
-                                    initial_value = False
-                                elif node.data_type == 'string':
-                                    initial_value = ''
-                                elif node.data_type == 'datetime':
-                                    initial_value = datetime.now()
-                                elif node.data_type == 'array':
-                                    initial_value = []
-                            
-                            # 创建变量节点
-                            ua_node = self.add_variable(
-                                node_id,
-                                node.name,
-                                initial_value,
-                                varianttype=self._get_ua_data_type(node.data_type)
-                            )
-                            logger.info(f"Rebuilt variable node: {node.node_id}")
-                        else:
-                            # 创建对象节点
-                            ua_node = self.add_object(node_id, node.name)
-                            logger.info(f"Rebuilt object node: {node.node_id}")
-                except Exception as e:
-                    logger.error(f"Failed to rebuild node {node.node_id}: {str(e)}")
-        except Exception as e:
-            logger.error(f"Error rebuilding nodes: {str(e)}")
-
-    def _variation_loop(self):
-        """节点值变化循环"""
-        logger.info("Starting variation loop")
-        
-        while not self.stop_variation and self.running:
             try:
-                # 获取所有需要自动变化的变量节点
-                nodes = OpcNode.objects.filter(
-                    node_type='variable',
-                    variation_type__in=['random', 'linear', 'cycle', 'discrete']
-                )
-                
-                if not nodes.exists():
-                    time.sleep(1.0)  # 如果没有需要变化的节���，等待1秒
-                    continue
-                
-                # 获取最小间隔时间
-                min_interval = min(node.variation_interval for node in nodes)
-                interval = max(min_interval or 1000, 100) / 1000.0  # 确保最小100ms，转换为秒
-                
-                for node in nodes:
-                    try:
-                        # 获取当前值
-                        current_value = node.get_typed_value()
-                        if current_value is None:
-                            continue
-                        
-                        # 根据变化类型计算新值
-                        if node.variation_type == 'random':
-                            if node.variation_min is not None and node.variation_max is not None:
-                                new_value = round(random.uniform(node.variation_min, node.variation_max), node.decimal_places)
-                            else:
-                                continue
-                        
-                        elif node.variation_type == 'linear':
-                            if all(x is not None for x in [node.variation_min, node.variation_max, node.variation_step]):
-                                current_value = float(current_value)
-                                new_value = round(current_value + node.variation_step, node.decimal_places)
-                                if new_value > node.variation_max:
-                                    new_value = node.variation_min
-                                elif new_value < node.variation_min:
-                                    new_value = node.variation_max
-                            else:
-                                continue
-                        
-                        elif node.variation_type == 'cycle':
-                            if all(x is not None for x in [node.variation_min, node.variation_max, node.variation_step]):
-                                current_value = float(current_value)
-                                new_value = round(current_value + node.variation_step, node.decimal_places)
-                                if new_value > node.variation_max:
-                                    new_value = node.variation_max
-                                    node.variation_step = -abs(node.variation_step)
-                                elif new_value < node.variation_min:
-                                    new_value = node.variation_min
-                                    node.variation_step = abs(node.variation_step)
-                                node.save(update_fields=['variation_step'])
-                            else:
-                                continue
-                        
-                        elif node.variation_type == 'discrete':
-                            try:
-                                values = node.get_variation_values_list()
-                                if not values:
-                                    continue
-                                current_index = values.index(float(current_value))
-                                next_index = (current_index + 1) % len(values)
-                                new_value = values[next_index]
-                            except (ValueError, IndexError):
-                                continue
-                        
-                        # 更���OPC UA节点值
-                        try:
-                            ua_node = self.get_node(ua.NodeId.from_string(node.node_id))
-                            if ua_node:
-                                if node.data_type == 'array':
-                                    ua_node.set_value(new_value)
-                                else:
-                                    ua_node.set_value(new_value, varianttype=self._get_ua_data_type(node.data_type))
-                                # 更新数据库中的值
-                                node.value = str(new_value)
-                                node.save(update_fields=['value'])
-                                logger.debug(f"Updated node {node.node_id} value to {new_value}")
-                        except Exception as e:
-                            logger.error(f"Failed to update node {node.node_id}: {str(e)}")
-                    
-                    except Exception as e:
-                        logger.error(f"Error processing node {node.node_id}: {str(e)}")
-                
-                # 等待到下一个间隔
-                time.sleep(interval)
-            
+                self.stop_event.set()
+                if self.update_thread:
+                    self.update_thread.join(timeout=5)
+                self.server.stop()
+                self.running = False
+                logger.info(f"Server {self.config.name} stopped")
+                return True
             except Exception as e:
-                logger.error(f"Error in variation loop: {str(e)}")
-                time.sleep(1.0)  # 发生错误时等待1秒
+                logger.error(f"Error stopping server: {e}")
+                return False
+        return True
 
-    def is_running(self):
-        """检查服务器是否运行"""
-        return self.running
+    def _update_values(self):
+        """更新节点值的后台线程"""
+        while not self.stop_event.is_set():
+            try:
+                for node_id, node_info in self.nodes.items():
+                    node = node_info['node']
+                    config = node_info['config']
+                    
+                    if config.node_type == 'variable' and config.variation_type != 'none':
+                        new_value = self._calculate_next_value(config)
+                        if new_value is not None:
+                            node.set_value(new_value)
+                            config.value = str(new_value)
+                            config.save()
+
+                time.sleep(0.1)  # 短暂休眠以减少CPU使用
+            except Exception as e:
+                logger.error(f"Error updating values: {e}")
+                time.sleep(1)  # 发生错误时等待较长时间
+
+    def _calculate_next_value(self, node_config):
+        """计算节点的下一个值"""
+        try:
+            current_value = float(node_config.value) if node_config.value else 0
+            
+            if node_config.variation_type == 'random':
+                if node_config.variation_min is not None and node_config.variation_max is not None:
+                    return random.uniform(node_config.variation_min, node_config.variation_max)
+            
+            elif node_config.variation_type == 'increment':
+                next_value = current_value + (node_config.variation_step or 1)
+                if node_config.variation_max is not None and next_value > node_config.variation_max:
+                    next_value = node_config.variation_min if node_config.variation_min is not None else 0
+                return next_value
+            
+            elif node_config.variation_type == 'decrement':
+                next_value = current_value - (node_config.variation_step or 1)
+                if node_config.variation_min is not None and next_value < node_config.variation_min:
+                    next_value = node_config.variation_max if node_config.variation_max is not None else 0
+                return next_value
+            
+            elif node_config.variation_type == 'sine':
+                time_factor = time.time() * 2 * math.pi / (node_config.variation_interval / 1000)
+                amplitude = (node_config.variation_max - node_config.variation_min) / 2
+                offset = (node_config.variation_max + node_config.variation_min) / 2
+                return offset + amplitude * math.sin(time_factor)
+            
+            elif node_config.variation_type == 'square':
+                time_factor = time.time() * 2 * math.pi / (node_config.variation_interval / 1000)
+                return node_config.variation_max if math.sin(time_factor) >= 0 else node_config.variation_min
+            
+            elif node_config.variation_type == 'triangle':
+                time_factor = time.time() * 2 * math.pi / (node_config.variation_interval / 1000)
+                amplitude = node_config.variation_max - node_config.variation_min
+                period = node_config.variation_interval / 1000
+                t = (time.time() % period) / period
+                if t < 0.5:
+                    return node_config.variation_min + 2 * amplitude * t
+                else:
+                    return node_config.variation_max - 2 * amplitude * (t - 0.5)
+            
+            elif node_config.variation_type == 'sawtooth':
+                time_factor = time.time() / (node_config.variation_interval / 1000)
+                amplitude = node_config.variation_max - node_config.variation_min
+                return node_config.variation_min + amplitude * (time_factor % 1)
+            
+            elif node_config.variation_type == 'discrete':
+                if node_config.variation_values:
+                    values = json.loads(node_config.variation_values)
+                    if values:
+                        try:
+                            current_index = values.index(current_value)
+                            next_index = (current_index + 1) % len(values)
+                            return values[next_index]
+                        except ValueError:
+                            return values[0]
+            
+            return current_value
+            
+        except Exception as e:
+            logger.error(f"Error calculating next value: {e}")
+            return None
+
+    def _get_initial_value(self, node_config):
+        """获取节点的初始值"""
+        if node_config.value:
+            try:
+                if node_config.data_type == 'boolean':
+                    return node_config.value.lower() in ('true', '1', 'yes', 'on')
+                elif node_config.data_type in ['int32', 'int64', 'uint32', 'uint64']:
+                    return int(node_config.value)
+                elif node_config.data_type in ['float', 'double']:
+                    return float(node_config.value)
+                elif node_config.data_type == 'datetime':
+                    return datetime.fromisoformat(node_config.value)
+                else:
+                    return node_config.value
+            except (ValueError, TypeError):
+                pass
+        
+        # 返回默认值
+        if node_config.data_type == 'boolean':
+            return False
+        elif node_config.data_type in ['int32', 'int64', 'uint32', 'uint64']:
+            return 0
+        elif node_config.data_type in ['float', 'double']:
+            return 0.0
+        elif node_config.data_type == 'datetime':
+            return datetime.now()
+        else:
+            return ""
