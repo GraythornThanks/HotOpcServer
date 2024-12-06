@@ -338,15 +338,9 @@
     <div class="container mt-4">
         <!-- 重启提示 -->
         <div class="restart-alert" :class="{ show: needsRestart }">
-            <div class="d-flex align-items-center justify-content-between">
-                <div class="d-flex align-items-center">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <span>您已修改了节点配置，需要重启服务器才能生效。</span>
-                </div>
-                <button class="btn btn-warning btn-sm" @click="restartServer" :disabled="isRestarting">
-                    <i class="bi bi-arrow-clockwise"></i>
-                    [[ isRestarting ? '重启中...' : '立即重启' ]]
-                </button>
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <span>您已修改了节点配置，需要重启服务器才能生效。</span>
             </div>
         </div>
 
