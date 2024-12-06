@@ -251,7 +251,7 @@ def test_server_connection(request):
                 'message': '服务器名称已存在'
             })
         
-        # 检查终端点和端口组合是否已存在
+        # ���查终端点和端口组合是否已存在
         endpoint_query = OpcServer.objects.filter(
             endpoint=data['endpoint'],
             port=data['port']
@@ -342,7 +342,7 @@ def export_servers(request):
 
 @require_http_methods(["POST"])
 def batch_start_servers(request):
-    """批��启动服务器"""
+    """批启动服务器"""
     try:
         data = json.loads(request.body)
         server_ids = data.get('server_ids', [])
@@ -566,3 +566,56 @@ def delete_node(request, node_id):
             logger.error(f"Error deleting node: {e}")
             return JsonResponse({'success': False, 'error': str(e)})
     return JsonResponse({'success': False, 'error': '不支持的请求方法'})
+
+@require_http_methods(["POST"])
+def batch_add_nodes(request):
+    """批量添加节点"""
+    try:
+        data = json.loads(request.body)
+        nodes = data.get('nodes', [])
+        
+        if not nodes:
+            return JsonResponse({
+                'success': False,
+                'error': '节点列表为空'
+            })
+        
+        created_nodes = []
+        with transaction.atomic():
+            for node_data in nodes:
+                server = OpcServer.objects.get(id=node_data['server_id'])
+                
+                # 检查节点ID是否已存在
+                if Node.objects.filter(server=server, node_id=node_data['node_id']).exists():
+                    raise ValidationError(f'节点ID {node_data["node_id"]} 已存在')
+                
+                node = Node.objects.create(
+                    server=server,
+                    name=node_data['name'],
+                    node_id=node_data['node_id'],
+                    node_type=node_data['node_type'],
+                    data_type=node_data['data_type'],
+                    variation_type=node_data['variation_type'],
+                    variation_interval=node_data['variation_interval'],
+                    variation_min=node_data['variation_min'],
+                    variation_max=node_data['variation_max'],
+                    variation_step=node_data['variation_step'],
+                    decimal_places=node_data['decimal_places']
+                )
+                created_nodes.append(node)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'成功创建 {len(created_nodes)} 个节点'
+        })
+    except ValidationError as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
+    except Exception as e:
+        logger.error(f"Error batch adding nodes: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })

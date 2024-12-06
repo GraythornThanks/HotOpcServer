@@ -10,6 +10,7 @@ urlpatterns = [
     path('node/add/', views.add_node, name='node-add'),
     path('node/<int:node_id>/edit/', views.edit_node, name='node-edit'),
     path('node/<int:node_id>/delete/', views.delete_node, name='node-delete'),
+    path('node/batch-add/', views.batch_add_nodes, name='node-batch-add'),
     
     # 服务器管理API
     path('server/list/', views.server_list, name='server-list'),

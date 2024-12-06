@@ -645,7 +645,7 @@
                             <label for="serverUri" class="form-label">服务器URI</label>
                             <input type="text" class="form-control" id="serverUri" name="uri"
                                    v-model="serverForm.uri" required>
-                            <div class="form-text">服务器的唯一标符，例如：urn:myserver</div>
+                            <div class="form-text">服务器的唯一标，例如：urn:myserver</div>
                         </div>
 
                         <!-- 安全设 -->
@@ -749,7 +749,7 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">导入服务器配置</h5>
+                    <h5 class="modal-title">入服务器配置</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -811,6 +811,332 @@
             </div>
         </div>
     </div>
+
+    <!-- 节点管理模态框 -->
+    <div class="modal fade" id="nodeModal" tabindex="-1" ref="nodeModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">${ nodeAction === 'add' ? '添加节点' : '编辑节点' }</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="nodeForm" @submit.prevent="handleNodeAction">
+                        <!-- 基本信息 -->
+                        <div class="mb-3">
+                            <label for="nodeName" class="form-label">节点名称</label>
+                            <input type="text" class="form-control" id="nodeName" 
+                                   v-model="nodeForm.name" required>
+                            <div class="invalid-feedback" v-if="formErrors.name">
+                                ${ formErrors.name }
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="nodeId" class="form-label">节点ID</label>
+                            <input type="text" class="form-control" id="nodeId" 
+                                   v-model="nodeForm.node_id" required>
+                            <div class="form-text">例如: ns=1;s=Temperature</div>
+                            <div class="invalid-feedback" v-if="formErrors.node_id">
+                                ${ formErrors.node_id }
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="nodeType" class="form-label">节点类型</label>
+                                    <select class="form-select" id="nodeType" 
+                                            v-model="nodeForm.node_type" required>
+                                        <option value="variable">变量</option>
+                                        <option value="object">对象</option>
+                                        <option value="method">方法</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="dataType" class="form-label">数据类型</label>
+                                    <select class="form-select" id="dataType" 
+                                            v-model="nodeForm.data_type" 
+                                            :disabled="nodeForm.node_type !== 'variable'">
+                                        <option value="double">Double</option>
+                                        <option value="float">Float</option>
+                                        <option value="int32">Int32</option>
+                                        <option value="int64">Int64</option>
+                                        <option value="uint32">UInt32</option>
+                                        <option value="uint64">UInt64</option>
+                                        <option value="boolean">Boolean</option>
+                                        <option value="string">String</option>
+                                        <option value="datetime">DateTime</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="nodeValue" class="form-label">初始值</label>
+                            <input type="text" class="form-control" id="nodeValue" 
+                                   v-model="nodeForm.value"
+                                   :disabled="nodeForm.node_type !== 'variable'">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="nodeDescription" class="form-label">描述</label>
+                            <textarea class="form-control" id="nodeDescription" 
+                                     v-model="nodeForm.description" rows="2"></textarea>
+                        </div>
+                        
+                        <!-- 变化设置 -->
+                        <div v-if="nodeForm.node_type === 'variable'" class="variation-settings">
+                            <h6 class="mb-3">变化设置</h6>
+                            
+                            <div class="mb-3">
+                                <label for="variationType" class="form-label">变化类型</label>
+                                <select class="form-select" id="variationType" 
+                                        v-model="nodeForm.variation_type">
+                                    <option value="none">无变化</option>
+                                    <option value="random">随机变化</option>
+                                    <option value="increment">递增</option>
+                                    <option value="decrement">递减</option>
+                                    <option value="sine">正弦波</option>
+                                    <option value="square">方波</option>
+                                    <option value="triangle">三角波</option>
+                                    <option value="sawtooth">锯齿波</option>
+                                    <option value="custom">自定义</option>
+                                </select>
+                            </div>
+                            
+                            <div v-if="nodeForm.variation_type !== 'none'" class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="variationInterval" class="form-label">变化间隔(ms)</label>
+                                        <input type="number" class="form-control" id="variationInterval" 
+                                               v-model="nodeForm.variation_interval" min="100">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="decimalPlaces" class="form-label">小数位数</label>
+                                        <input type="number" class="form-control" id="decimalPlaces" 
+                                               v-model="nodeForm.decimal_places" min="0" max="10">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="nodeForm.variation_type !== 'none'" class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="variationMin" class="form-label">最小值</label>
+                                        <input type="number" class="form-control" id="variationMin" 
+                                               v-model="nodeForm.variation_min">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="variationMax" class="form-label">最大值</label>
+                                        <input type="number" class="form-control" id="variationMax" 
+                                               v-model="nodeForm.variation_max">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="nodeForm.variation_type !== 'none'" class="mb-3">
+                                <label for="variationStep" class="form-label">步长</label>
+                                <input type="number" class="form-control" id="variationStep" 
+                                       v-model="nodeForm.variation_step">
+                            </div>
+                            
+                            <div v-if="nodeForm.variation_type === 'custom'" class="mb-3">
+                                <label for="variationValues" class="form-label">自定义值集合</label>
+                                <textarea class="form-control" id="variationValues" 
+                                         v-model="nodeForm.variation_values" rows="3"
+                                         placeholder="输入以逗号分隔的值列表，例如: 1,2,3,4,5"></textarea>
+                                <div class="form-text">输入以逗号分隔的值列表</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" form="nodeForm" class="btn btn-primary"
+                            :disabled="isProcessing">
+                        ${ isProcessing ? '处理中...' : '确定' }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 批量添加节点模态框 -->
+    <div class="modal fade" id="batchNodeModal" tabindex="-1" ref="batchNodeModal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量添加节点</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="batchNodeForm" @submit.prevent="handleBatchNodeAdd">
+                        <!-- 节点模板 -->
+                        <div class="mb-3">
+                            <label class="form-label">节点名称模板</label>
+                            <input type="text" class="form-control" v-model="batchNodeForm.nameTemplate" required>
+                            <div class="form-text">使用 {n} 作为序号占位符，例如：Temperature_{n}</div>
+                            <div class="invalid-feedback" v-if="formErrors.nameTemplate">
+                                ${ formErrors.nameTemplate }
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">节点ID模板</label>
+                            <input type="text" class="form-control" v-model="batchNodeForm.nodeIdTemplate" required>
+                            <div class="form-text">例如：ns=1;s=Temperature_{n}</div>
+                            <div class="invalid-feedback" v-if="formErrors.nodeIdTemplate">
+                                ${ formErrors.nodeIdTemplate }
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">起始序号</label>
+                                    <input type="number" class="form-control" v-model="batchNodeForm.startIndex" min="1" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">节点数量</label>
+                                    <input type="number" class="form-control" v-model="batchNodeForm.count" min="1" max="100" required>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">节点类型</label>
+                                    <select class="form-select" v-model="batchNodeForm.nodeType" required>
+                                        <option value="variable">变量</option>
+                                        <option value="object">对象</option>
+                                        <option value="method">方法</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">数据类型</label>
+                                    <select class="form-select" v-model="batchNodeForm.dataType" 
+                                            :disabled="batchNodeForm.nodeType !== 'variable'">
+                                        <option value="double">Double</option>
+                                        <option value="float">Float</option>
+                                        <option value="int32">Int32</option>
+                                        <option value="int64">Int64</option>
+                                        <option value="uint32">UInt32</option>
+                                        <option value="uint64">UInt64</option>
+                                        <option value="boolean">Boolean</option>
+                                        <option value="string">String</option>
+                                        <option value="datetime">DateTime</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 变化设置 -->
+                        <div v-if="batchNodeForm.nodeType === 'variable'" class="variation-settings">
+                            <h6 class="mb-3">变化设置</h6>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">变化类型</label>
+                                <select class="form-select" v-model="batchNodeForm.variationType">
+                                    <option value="none">无变化</option>
+                                    <option value="random">随机变化</option>
+                                    <option value="increment">递增</option>
+                                    <option value="decrement">递减</option>
+                                    <option value="sine">正弦波</option>
+                                    <option value="square">方波</option>
+                                    <option value="triangle">三角波</option>
+                                    <option value="sawtooth">锯齿波</option>
+                                </select>
+                            </div>
+                            
+                            <div v-if="batchNodeForm.variationType !== 'none'" class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">变化间隔(ms)</label>
+                                        <input type="number" class="form-control" 
+                                               v-model="batchNodeForm.variationInterval" min="100">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">小数位数</label>
+                                        <input type="number" class="form-control" 
+                                               v-model="batchNodeForm.decimalPlaces" min="0" max="10">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="batchNodeForm.variationType !== 'none'" class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">最小值</label>
+                                        <input type="number" class="form-control" 
+                                               v-model="batchNodeForm.variationMin">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">最大值</label>
+                                        <input type="number" class="form-control" 
+                                               v-model="batchNodeForm.variationMax">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div v-if="batchNodeForm.variationType !== 'none'" class="mb-3">
+                                <label class="form-label">步长</label>
+                                <input type="number" class="form-control" 
+                                       v-model="batchNodeForm.variationStep">
+                            </div>
+                        </div>
+                        
+                        <!-- 预览 -->
+                        <div v-if="nodePreview.length > 0" class="mt-4">
+                            <h6 class="mb-3">预览 (显示前5个节点)</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th>节点ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="node in nodePreview.slice(0, 5)" :key="node.name">
+                                            <td>${ node.name }</td>
+                                            <td>${ node.node_id }</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-info" @click="previewNodes"
+                            :disabled="!isBatchFormValid">
+                        预览
+                    </button>
+                    <button type="submit" form="batchNodeForm" class="btn btn-primary"
+                            :disabled="isProcessing || !isBatchFormValid || nodePreview.length === 0">
+                        ${ isProcessing ? '处理中...' : '确定' }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -861,7 +1187,39 @@
                 importPreview: [],
                 formErrors: {},
                 toasts: [],
-                toastTimeout: 3000
+                toastTimeout: 3000,
+                nodeAction: 'add',
+                nodeForm: {
+                    id: null,
+                    name: '',
+                    node_id: '',
+                    node_type: 'variable',
+                    data_type: 'double',
+                    value: '',
+                    description: '',
+                    variation_type: 'none',
+                    variation_interval: 1000,
+                    variation_min: 0,
+                    variation_max: 100,
+                    variation_step: 1,
+                    variation_values: '',
+                    decimal_places: 2
+                },
+                batchNodeForm: {
+                    nameTemplate: '',
+                    nodeIdTemplate: '',
+                    startIndex: 1,
+                    count: 10,
+                    nodeType: 'variable',
+                    dataType: 'double',
+                    variationType: 'none',
+                    variationInterval: 1000,
+                    variationMin: 0,
+                    variationMax: 100,
+                    variationStep: 1,
+                    decimalPlaces: 2
+                },
+                nodePreview: []
             }
         },
         computed: {
@@ -890,6 +1248,13 @@
                 }
                 
                 return true;
+            },
+            isBatchFormValid() {
+                return this.batchNodeForm.nameTemplate && 
+                       this.batchNodeForm.nodeIdTemplate &&
+                       this.batchNodeForm.startIndex > 0 &&
+                       this.batchNodeForm.count > 0 &&
+                       this.batchNodeForm.count <= 100;
             }
         },
         methods: {
@@ -944,7 +1309,7 @@
                         security_policy: server.security_policy || 'None'
                     };
                 } else {
-                    // 添加模���：重置表单
+                    // 添加模：重置表单
                     this.resetForm();
                 }
                 
@@ -1194,7 +1559,7 @@
             getDataTypeDisplay(type) {
                 const types = {
                     'double': '双精度浮点数',
-                    'float': '单精度浮点��',
+                    'float': '单精度浮点',
                     'int32': '32位整数',
                     'int64': '64位整数',
                     'uint32': '32位无符号整数',
@@ -1481,7 +1846,7 @@
                     isValid = false;
                 }
                 
-                // 如果允许匿名访问，验证用户名和密码
+                // 如果允���匿名访问，验证户名和密码
                 if (!this.serverForm.allow_anonymous) {
                     if (!this.serverForm.username) {
                         this.formErrors.username = '请输入用户名';
@@ -1519,6 +1884,223 @@
                     message: '',
                     success: false
                 };
+            },
+
+            showNodeModal(action, node = null) {
+                this.nodeAction = action;
+                
+                if (action === 'edit' && node) {
+                    // 编辑模式：复制节点数据到表单
+                    this.nodeForm = {
+                        id: node.id,
+                        name: node.name,
+                        node_id: node.node_id,
+                        node_type: node.node_type,
+                        data_type: node.data_type,
+                        value: node.value,
+                        description: node.description,
+                        variation_type: node.variation_type,
+                        variation_interval: node.variation_interval,
+                        variation_min: node.variation_min,
+                        variation_max: node.variation_max,
+                        variation_step: node.variation_step,
+                        variation_values: node.variation_values,
+                        decimal_places: node.decimal_places
+                    };
+                } else {
+                    // 添加模式：重置表单
+                    this.resetNodeForm();
+                }
+                
+                this.nodeModal.show();
+            },
+            
+            async handleNodeAction() {
+                if (this.isProcessing || !this.validateNodeForm()) return;
+                
+                this.isProcessing = true;
+                try {
+                    const url = this.nodeAction === 'add' 
+                        ? '/node/add/'
+                        : `/node/${this.nodeForm.id}/edit/`;
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.getCsrfToken()
+                        },
+                        body: JSON.stringify({
+                            ...this.nodeForm,
+                            server_id: this.currentServer.id
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showSuccess(
+                            this.nodeAction === 'add' 
+                                ? '节点添加成功' 
+                                : '节点配置已更新'
+                        );
+                        this.nodeModal.hide();
+                        await this.loadNodes();
+                        this.resetNodeForm();
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error handling node action:', error);
+                    this.showError('操作失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+            
+            validateNodeForm() {
+                this.formErrors = {};
+                let isValid = true;
+                
+                // 验证节点名称
+                if (!this.nodeForm.name) {
+                    this.formErrors.name = '请输入节点名称';
+                    isValid = false;
+                }
+                
+                // 验证节点ID
+                if (!this.nodeForm.node_id) {
+                    this.formErrors.node_id = '请输入节点ID';
+                    isValid = false;
+                } else if (!this.nodeForm.node_id.match(/^ns=\d+;[sib]=.+$/)) {
+                    this.formErrors.node_id = '节点ID格式无效，例如: ns=1;s=Temperature';
+                    isValid = false;
+                }
+                
+                // 如果是变量类型，验证变化设置
+                if (this.nodeForm.node_type === 'variable' && 
+                    this.nodeForm.variation_type !== 'none') {
+                    // 验证变化间隔
+                    if (this.nodeForm.variation_interval < 100) {
+                        this.formErrors.variation_interval = '变化间隔不能小于100ms';
+                        isValid = false;
+                    }
+                    
+                    // 验证最大最小值
+                    if (this.nodeForm.variation_min >= this.nodeForm.variation_max) {
+                        this.formErrors.variation_min = '最小值必须小于最大值';
+                        isValid = false;
+                    }
+                    
+                    // 验证自定义值集合
+                    if (this.nodeForm.variation_type === 'custom' && 
+                        !this.nodeForm.variation_values) {
+                        this.formErrors.variation_values = '请输入自定义值集合';
+                        isValid = false;
+                    }
+                }
+                
+                return isValid;
+            },
+            
+            resetNodeForm() {
+                this.nodeForm = {
+                    id: null,
+                    name: '',
+                    node_id: '',
+                    node_type: 'variable',
+                    data_type: 'double',
+                    value: '',
+                    description: '',
+                    variation_type: 'none',
+                    variation_interval: 1000,
+                    variation_min: 0,
+                    variation_max: 100,
+                    variation_step: 1,
+                    variation_values: '',
+                    decimal_places: 2
+                };
+                this.formErrors = {};
+            },
+
+            showBatchAddModal() {
+                this.resetBatchForm();
+                this.batchNodeModal.show();
+            },
+            
+            previewNodes() {
+                this.nodePreview = [];
+                const template = this.batchNodeForm;
+                
+                for (let i = 0; i < template.count; i++) {
+                    const index = template.startIndex + i;
+                    this.nodePreview.push({
+                        name: template.nameTemplate.replace('{n}', index),
+                        node_id: template.nodeIdTemplate.replace('{n}', index)
+                    });
+                }
+            },
+            
+            async handleBatchNodeAdd() {
+                if (this.isProcessing || !this.isBatchFormValid) return;
+                
+                this.isProcessing = true;
+                try {
+                    const nodes = this.nodePreview.map(node => ({
+                        ...node,
+                        server_id: this.currentServer.id,
+                        node_type: this.batchNodeForm.nodeType,
+                        data_type: this.batchNodeForm.dataType,
+                        variation_type: this.batchNodeForm.variationType,
+                        variation_interval: this.batchNodeForm.variationInterval,
+                        variation_min: this.batchNodeForm.variationMin,
+                        variation_max: this.batchNodeForm.variationMax,
+                        variation_step: this.batchNodeForm.variationStep,
+                        decimal_places: this.batchNodeForm.decimalPlaces
+                    }));
+                    
+                    const response = await fetch('/node/batch-add/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': this.getCsrfToken()
+                        },
+                        body: JSON.stringify({ nodes })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        this.showSuccess(`成功添加 ${nodes.length} 个节点`);
+                        this.batchNodeModal.hide();
+                        await this.loadNodes();
+                        this.resetBatchForm();
+                    } else {
+                        this.showError(data.error);
+                    }
+                } catch (error) {
+                    console.error('Error adding batch nodes:', error);
+                    this.showError('批量添加节点失败');
+                } finally {
+                    this.isProcessing = false;
+                }
+            },
+            
+            resetBatchForm() {
+                this.batchNodeForm = {
+                    nameTemplate: '',
+                    nodeIdTemplate: '',
+                    startIndex: 1,
+                    count: 10,
+                    nodeType: 'variable',
+                    dataType: 'double',
+                    variationType: 'none',
+                    variationInterval: 1000,
+                    variationMin: 0,
+                    variationMax: 100,
+                    variationStep: 1,
+                    decimalPlaces: 2
+                };
+                this.nodePreview = [];
+                this.formErrors = {};
             }
         },
         async mounted() {
@@ -1526,6 +2108,8 @@
             this.serverModal = new bootstrap.Modal(this.$refs.serverModal);
             this.confirmModal = new bootstrap.Modal(document.getElementById('confirmModal'));
             this.importModal = new bootstrap.Modal(this.$refs.importModal);
+            this.nodeModal = new bootstrap.Modal(this.$refs.nodeModal);
+            this.batchNodeModal = new bootstrap.Modal(this.$refs.batchNodeModal);
             
             // 加载服务器列表
             await this.loadServers();
