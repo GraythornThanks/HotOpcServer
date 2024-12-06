@@ -103,16 +103,25 @@ class OpcUaServer:
         """启动服务器"""
         if not self.running:
             try:
+                # 启动服务器
                 self.server.start()
                 self.running = True
                 self.stop_event.clear()
+                
+                # 加载所有节点
+                for node in self.config.nodes.all():
+                    self.add_node(node)
+                
+                # 启动更新线程
                 self.update_thread = threading.Thread(target=self._update_values)
                 self.update_thread.daemon = True
                 self.update_thread.start()
+                
                 logger.info(f"Server {self.config.name} started")
                 return True
             except Exception as e:
                 logger.error(f"Error starting server: {e}")
+                self.running = False
                 return False
         return True
 

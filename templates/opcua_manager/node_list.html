@@ -535,13 +535,11 @@
                 </span>
             </div>
             <div class="btn-group">
-                <button class="btn btn-primary" @click="showNodeModal('add')"
-                        :disabled="!currentServer.is_running">
+                <button class="btn btn-primary" @click="showNodeModal('add')">
                     <i class="bi bi-plus-lg"></i>
                     添加节点
                 </button>
-                <button class="btn btn-info" @click="showBatchAddModal"
-                        :disabled="!currentServer.is_running">
+                <button class="btn btn-info" @click="showBatchAddModal">
                     <i class="bi bi-collection"></i>
                     批量添加
                 </button>
@@ -558,6 +556,11 @@
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">加载中...</span>
                 </div>
+            </div>
+
+            <div v-if="!currentServer.is_running" class="alert alert-info" role="alert">
+                <i class="bi bi-info-circle me-2"></i>
+                节点配置将在服务器重启后生效
             </div>
 
             <table class="table table-hover mb-0" v-else>
@@ -941,7 +944,7 @@
                         security_policy: server.security_policy || 'None'
                     };
                 } else {
-                    // 添加模式：重置表单
+                    // 添加模���：重置表单
                     this.resetForm();
                 }
                 
@@ -1191,7 +1194,7 @@
             getDataTypeDisplay(type) {
                 const types = {
                     'double': '双精度浮点数',
-                    'float': '单精度浮点数',
+                    'float': '单精度浮点��',
                     'int32': '32位整数',
                     'int64': '64位整数',
                     'uint32': '32位无符号整数',
@@ -1285,7 +1288,7 @@
             confirmBatchDelete() {
                 this.confirmDialog = {
                     title: '确认批量删除',
-                    message: `确定要删除选中的 ${this.selectedServers.length} 个服务器吗��此操作不可恢复。`,
+                    message: `确定要删除选中的 ${this.selectedServers.length} 个服务器吗此操作不可恢复。`,
                     callback: () => this.batchDeleteServers()
                 };
                 this.confirmModal.show();
@@ -1450,7 +1453,7 @@
                 
                 // 验证服务器名称
                 if (!this.serverForm.name) {
-                    this.formErrors.name = '���输入服务器名称';
+                    this.formErrors.name = '输入服务器名称';
                     isValid = false;
                 }
                 

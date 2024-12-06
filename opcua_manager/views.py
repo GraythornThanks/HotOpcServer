@@ -46,13 +46,26 @@ def server_list(request):
         })
     return JsonResponse({'success': True, 'servers': server_list})
 
+def check_port_available(endpoint, port):
+    """检查端口是否可用"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # 设置超时时间为1秒
+        sock.settimeout(1)
+        result = sock.connect_ex((endpoint, int(port)))
+        sock.close()
+        return result != 0
+    except Exception as e:
+        logger.error(f"Error checking port: {e}")
+        return False
+
 @require_http_methods(["POST"])
 def add_server(request):
     """添加新服务器"""
     try:
         data = json.loads(request.body)
         
-        # 检查服务器名称是否重复
+        # 检查服务器名称是否已存在
         if OpcServer.objects.filter(name=data['name']).exists():
             return JsonResponse({
                 'success': False,
@@ -60,10 +73,20 @@ def add_server(request):
             })
         
         # 检查终端点和端口组合是否已存在
-        if OpcServer.objects.filter(endpoint=data['endpoint'], port=data['port']).exists():
+        if OpcServer.objects.filter(
+            endpoint=data['endpoint'], 
+            port=data['port']
+        ).exists():
             return JsonResponse({
                 'success': False,
                 'error': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
+            })
+        
+        # 检查端口是否被占用
+        if not check_port_available(data['endpoint'], data['port']):
+            return JsonResponse({
+                'success': False,
+                'error': f'端口 {data["port"]} 已被占用，请使用其他端口'
             })
         
         server = OpcServer.objects.create(
@@ -76,25 +99,18 @@ def add_server(request):
             password=data.get('password', ''),
             min_sampling_interval=data.get('min_sampling_interval', 100)
         )
-        return JsonResponse({
-            'success': True,
-            'server': {
-                'id': server.id,
-                'name': server.name,
-                'is_running': server.is_running
-            }
-        })
+        return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
 @require_http_methods(["POST"])
 def edit_server(request, server_id):
-    """编辑服务器配置"""
+    """编辑服务器"""
     try:
-        server = get_object_or_404(OpcServer, id=server_id)
         data = json.loads(request.body)
+        server = get_object_or_404(OpcServer, id=server_id)
         
-        # 检查服务器名称是否重复（排除当前服务器）
+        # 检查服务器名称是否已存在（排除当前服务器）
         if OpcServer.objects.filter(name=data['name']).exclude(id=server_id).exists():
             return JsonResponse({
                 'success': False,
@@ -110,6 +126,14 @@ def edit_server(request, server_id):
                 'success': False,
                 'error': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
             })
+        
+        # 如果终端点或端口发生变化，检查新端口是否被占用
+        if (server.endpoint != data['endpoint'] or server.port != data['port']):
+            if not check_port_available(data['endpoint'], data['port']):
+                return JsonResponse({
+                    'success': False,
+                    'error': f'端口 {data["port"]} 已被占用，请使用其他端口'
+                })
         
         # 更新基本信息
         server.name = data['name']
@@ -138,7 +162,7 @@ def delete_server(request, server_id):
         if server.is_running:
             return JsonResponse({
                 'success': False,
-                'error': '无法删除��行中的服务器，请先停止服务器'
+                'error': '无法删除行中的服务器，请先停止服务器'
             })
         server.delete()
         return JsonResponse({'success': True})
@@ -214,55 +238,40 @@ def test_server_connection(request):
     """测试服务器连接"""
     try:
         data = json.loads(request.body)
-        mode = data.get('mode', 'add')  # 获取操作模式
-        original_id = data.get('original_id')  # 获取原始服务器ID
-
-        # 验证URI格式
-        if not data['uri'].startswith('urn:'):
-            return JsonResponse({
-                'success': False,
-                'message': 'URI必须以"urn:"开头'
-            })
+        mode = data.get('mode', 'add')
+        original_id = data.get('original_id')
         
-        # 检查服务器名称是否重复
-        existing_server = OpcServer.objects.filter(name=data['name'])
-        if mode == 'edit':
-            # 编辑模式：排除当前服务器
-            existing_server = existing_server.exclude(id=original_id)
-        
-        if existing_server.exists():
+        # 检查服务器名称是否已存在
+        name_query = OpcServer.objects.filter(name=data['name'])
+        if mode == 'edit' and original_id:
+            name_query = name_query.exclude(id=original_id)
+        if name_query.exists():
             return JsonResponse({
                 'success': False,
                 'message': '服务器名称已存在'
             })
-
+        
         # 检查终端点和端口组合是否已存在
-        existing_endpoint = OpcServer.objects.filter(
+        endpoint_query = OpcServer.objects.filter(
             endpoint=data['endpoint'],
             port=data['port']
         )
-        if mode == 'edit':
-            # 编辑模式：排除当前服务器
-            existing_endpoint = existing_endpoint.exclude(id=original_id)
-        
-        if existing_endpoint.exists():
+        if mode == 'edit' and original_id:
+            endpoint_query = endpoint_query.exclude(id=original_id)
+        if endpoint_query.exists():
             return JsonResponse({
                 'success': False,
                 'message': f'终端点 {data["endpoint"]}:{data["port"]} 已被其他服务器使用'
             })
-
-        # 测试端口是否可用（仅在端口和终端点组合不存在时测试）
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex((data['endpoint'], int(data['port'])))
-        sock.close()
         
-        if result == 0:
+        # 检查端口是否被占用
+        if not check_port_available(data['endpoint'], data['port']):
             return JsonResponse({
                 'success': False,
                 'message': f'端口 {data["port"]} 已被占用，请使用其他端口'
             })
         
-        success_message = '连接测试成功，可以创建服务器' if mode == 'add' else '接测试成功，可以更新服务器配置'
+        success_message = '连接测试成功，可以创建服务器' if mode == 'add' else '连接测试成功，可以更新服务器配置'
         return JsonResponse({
             'success': True,
             'message': success_message
@@ -333,7 +342,7 @@ def export_servers(request):
 
 @require_http_methods(["POST"])
 def batch_start_servers(request):
-    """批量启动服务器"""
+    """批��启动服务器"""
     try:
         data = json.loads(request.body)
         server_ids = data.get('server_ids', [])
@@ -409,7 +418,7 @@ def batch_delete_servers(request):
                         server.delete()
                         success_count += 1
                     else:
-                        errors.append(f'服务器 {server.name} 正��运行，无法删除')
+                        errors.append(f'服务器 {server.name} 正在运行，无法删除')
                 except Exception as e:
                     errors.append(f'服务器 {server_id} 删除失败: {str(e)}')
         
@@ -478,18 +487,17 @@ def add_node(request):
                 decimal_places=data.get('decimal_places', 2)
             )
             
-            # 如果服务器正在运行，添加点到服务器实例
-            if server.is_running:
-                server_instance = OpcUaServer.get_instance(server.id)
-                if server_instance:
-                    server_instance.add_node(node)
-            
             return JsonResponse({
                 'success': True,
                 'node': {
                     'id': node.id,
                     'name': node.name,
-                    'node_id': node.node_id
+                    'node_id': node.node_id,
+                    'node_type': node.node_type,
+                    'data_type': node.data_type,
+                    'value': node.value,
+                    'description': node.description,
+                    'variation_type': node.variation_type
                 }
             })
         except OpcServer.DoesNotExist:
@@ -517,14 +525,19 @@ def edit_node(request, node_id):
             
             node.save()
             
-            # 如果服务器正在运行，更新节点
-            if node.server.is_running:
-                server_instance = OpcUaServer.get_instance(node.server.id)
-                if server_instance:
-                    server_instance.remove_node(node.id)
-                    server_instance.add_node(node)
-            
-            return JsonResponse({'success': True})
+            return JsonResponse({
+                'success': True,
+                'node': {
+                    'id': node.id,
+                    'name': node.name,
+                    'node_id': node.node_id,
+                    'node_type': node.node_type,
+                    'data_type': node.data_type,
+                    'value': node.value,
+                    'description': node.description,
+                    'variation_type': node.variation_type
+                }
+            })
         except Node.DoesNotExist:
             return JsonResponse({'success': False, 'error': '节点不存在'})
         except Exception as e:
