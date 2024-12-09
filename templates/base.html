@@ -1,30 +1,79 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+    <!-- 基本的元数据设置 -->
     <meta charset="UTF-8">
+    <!-- 移动设备viewport设置，确保响应式布局正常工作 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 页面标题块，允许子模板覆盖 -->
     <title>{% block title %}HotOpcServer - OPC UA服务器管理{% endblock %}</title>
-    <!-- Bootstrap CSS -->
+    
+    <!-- 外部CSS依赖 -->
+    <!-- Bootstrap 5.1.3版本，提供响应式布局和UI组件 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
+    <!-- Bootstrap图标库，提供丰富的矢量图标 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <!-- 子模板CSS扩展块 -->
     {% block extra_css %}{% endblock %}
+    
+    <!-- 全局样式定义 -->
     <style>
+        /* 导航栏样式 */
+        .navbar {
+            padding: 1rem 0;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+        
         .navbar-brand {
             font-weight: bold;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
+        
+        .navbar-brand i {
+            font-size: 1.5rem;
+        }
+        
+        .nav-link {
+            font-weight: 500;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        
+        .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .nav-link.active {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .nav-link i {
+            margin-right: 0.5rem;
+        }
+        
+        /* 主内容区域样式 */
         .content-wrapper {
-            padding: 20px 0;
+            padding: 2rem 0;
+            min-height: calc(100vh - 70px);
+            background-color: #f8f9fa;
         }
+        
+        /* 消息提示框样式 */
         .alert {
             margin-bottom: 1rem;
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
             animation: fadeInOut 3s forwards;
             opacity: 0;
         }
-        .table td {
-            vertical-align: middle;
-        }
-
+        
+        /* 消息提示框动画 */
         @keyframes fadeInOut {
             0% {
                 opacity: 0;
@@ -43,21 +92,76 @@
                 transform: translateY(-20px);
             }
         }
+        
+        /* 表格样式 */
+        .table td {
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
-    <!-- 导航栏 -->
+    <!-- 顶部导航栏 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container">
-            <a class="navbar-brand" href="{% url 'node-list' %}">
-                <i class="bi bi-hdd-network"></i> HotOpcServer
+            <!-- Logo和品牌名称 -->
+            <a class="navbar-brand" href="{% url 'server-list' %}">
+                <i class="bi bi-hdd-network"></i>
+                HotOpcServer
             </a>
+            
+            <!-- 移动端折叠按钮 -->
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <!-- 导航菜单 -->
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <!-- 服务器管理 -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'server-list' %}active{% endif %}" 
+                           href="{% url 'server-list' %}">
+                            <i class="bi bi-server"></i>
+                            服务器管理
+                        </a>
+                    </li>
+                    
+                    <!-- 节点总表 -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'node-list' %}active{% endif %}" 
+                           href="{% url 'node-list' %}">
+                            <i class="bi bi-diagram-2"></i>
+                            节点总表
+                        </a>
+                    </li>
+                </ul>
+                
+                <!-- 右侧工具栏 -->
+                <ul class="navbar-nav">
+                    <!-- 系统状态 -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="systemStatus">
+                            <i class="bi bi-activity"></i>
+                            <span id="runningServers">0</span> 台运行中
+                        </a>
+                    </li>
+                    
+                    <!-- 帮助文档 -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#helpModal">
+                            <i class="bi bi-question-circle"></i>
+                            帮助
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </nav>
 
-    <!-- 主要内容 -->
+    <!-- 主要内容区域 -->
     <div class="content-wrapper">
         <div class="container">
+            <!-- 消息提示 -->
             {% if messages %}
             <div class="messages">
                 {% for message in messages %}
@@ -68,24 +172,73 @@
             </div>
             {% endif %}
 
+            <!-- 页面主体内容 -->
             {% block content %}{% endblock %}
         </div>
     </div>
 
-    <!-- Bootstrap Bundle JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    {% block extra_js %}{% endblock %}
+    <!-- 帮助文档模态框 -->
+    <div class="modal fade" id="helpModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">帮助文档</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <h6>快速入门</h6>
+                    <ol>
+                        <li>首先在节点总表中创建需要的节点</li>
+                        <li>在服务器管理中添加OPC UA服务器</li>
+                        <li>为服务器配置所需的节点</li>
+                        <li>启动服务器开始运行</li>
+                    </ol>
+                    
+                    <h6>注意事项</h6>
+                    <ul>
+                        <li>修改节点配置后需要重启相关服务器</li>
+                        <li>删除节点时请确保没有服务器正在使用</li>
+                        <li>建议定期备份重要的节点配置</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <!-- 自动移除消息的脚本 -->
+    <!-- JavaScript依赖 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 全局JavaScript -->
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(function(alert) {
-                setTimeout(function() {
-                    alert.remove();
-                }, 3000);
+    // 更新系统状态
+    function updateSystemStatus() {
+        fetch('/api/servers/')
+            .then(response => response.json())
+            .then(data => {
+                const runningCount = data.servers.filter(server => server.is_running).length;
+                document.getElementById('runningServers').textContent = runningCount;
             });
+    }
+    
+    // 定期更新状态
+    setInterval(updateSystemStatus, 5000);
+    updateSystemStatus();
+    
+    // 自动隐藏消息提示
+    document.addEventListener('DOMContentLoaded', function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            setTimeout(function() {
+                alert.remove();
+            }, 3000);
         });
+    });
     </script>
+    
+    <!-- 子模板JavaScript扩展 -->
+    {% block extra_js %}{% endblock %}
 </body>
 </html> 

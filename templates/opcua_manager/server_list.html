@@ -1,0 +1,380 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}服务器管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 服务器卡片样式 */
+    .server-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        transition: all 0.3s ease;
+        margin-bottom: 1.5rem;
+    }
+    
+    .server-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    }
+    
+    /* 服务器状态指示器 */
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }
+    
+    .status-running {
+        background-color: var(--success-color);
+        box-shadow: 0 0 8px rgba(25, 135, 84, 0.4);
+    }
+    
+    .status-stopped {
+        background-color: var(--danger-color);
+        box-shadow: 0 0 8px rgba(220, 53, 69, 0.4);
+    }
+    
+    /* 工具栏样式 */
+    .toolbar {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    }
+    
+    /* 统计卡片样式 */
+    .stats-card {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .stats-number {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    
+    .stats-label {
+        font-size: 0.875rem;
+        opacity: 0.9;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- 顶部统计信息 -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ servers.count }}</div>
+                <div class="stats-label">总服务器数</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ running_servers }}</div>
+                <div class="stats-label">运行中服务器</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ total_nodes }}</div>
+                <div class="stats-label">总节点数</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ active_nodes }}</div>
+                <div class="stats-label">活动节点数</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="toolbar d-flex justify-content-between align-items-center mb-4">
+        <h4 class="mb-0">服务器管理</h4>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addServerModal">
+            <i class="bi bi-plus-lg"></i> 添加服务器
+        </button>
+    </div>
+
+    <!-- 服务器列表 -->
+    <div class="row">
+        {% for server in servers %}
+        <div class="col-md-6 mb-4">
+            <div class="server-card p-4">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h5 class="mb-1">
+                            <span class="status-indicator {% if server.is_running %}status-running{% else %}status-stopped{% endif %}"></span>
+                            {{ server.name }}
+                        </h5>
+                        <div class="text-muted small">
+                            <i class="bi bi-hdd-network"></i> {{ server.endpoint }}:{{ server.port }}
+                        </div>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-light btn-sm" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li>
+                                <a class="dropdown-item" href="{% url 'server-detail' server.id %}">
+                                    <i class="bi bi-info-circle"></i> 详情
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'server-nodes' server.id %}">
+                                    <i class="bi bi-diagram-2"></i> 节点配置
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" onclick="editServer({{ server.id }})">
+                                    <i class="bi bi-pencil"></i> 编辑
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item text-danger" href="#" onclick="deleteServer({{ server.id }})">
+                                    <i class="bi bi-trash"></i> 删除
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="row g-3 mb-3">
+                    <div class="col-6">
+                        <div class="small text-muted">节点数量</div>
+                        <div class="fw-bold">{{ server.server_nodes.count }}</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="small text-muted">最后启动时间</div>
+                        <div class="fw-bold">
+                            {% if server.last_start_time %}
+                            {{ server.last_start_time|date:"Y-m-d H:i:s" }}
+                            {% else %}
+                            从未启动
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    {% if server.is_running %}
+                    <button class="btn btn-outline-danger" onclick="stopServer({{ server.id }})">
+                        <i class="bi bi-stop-circle"></i> 停止
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="restartServer({{ server.id }})">
+                        <i class="bi bi-arrow-clockwise"></i> 重启
+                    </button>
+                    {% else %}
+                    <button class="btn btn-outline-success" onclick="startServer({{ server.id }})">
+                        <i class="bi bi-play-circle"></i> 启动
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-server fs-1 mb-3 d-block"></i>
+                <h5>暂无服务器</h5>
+                <p>点击"添加服务器"按钮创建新的OPC UA服务器</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- 添加服务器模态框 -->
+<div class="modal fade" id="addServerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加服务器</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addServerForm">
+                    <div class="mb-3">
+                        <label class="form-label">服务器名称</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">服务器地址</label>
+                        <input type="text" class="form-control" name="endpoint" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">端口号</label>
+                        <input type="number" class="form-control" name="port" min="1024" max="65535" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">服务器URI</label>
+                        <input type="text" class="form-control" name="uri" required>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="allow_anonymous" checked>
+                            <label class="form-check-label">允许匿名访问</label>
+                        </div>
+                    </div>
+                    <div class="auth-fields d-none">
+                        <div class="mb-3">
+                            <label class="form-label">用户名</label>
+                            <input type="text" class="form-control" name="username">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">密码</label>
+                            <input type="password" class="form-control" name="password">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">最小发布间隔(ms)</label>
+                        <input type="number" class="form-control" name="min_publish_interval" value="500" min="100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">默认命名空间</label>
+                        <input type="text" class="form-control" name="default_namespace">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitAddServer()">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 服务器控制函数
+function startServer(serverId) {
+    if (!confirm('确定要启动服务器吗？')) return;
+    fetch(`/servers/${serverId}/start/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('启动失败：' + data.message);
+        }
+    });
+}
+
+function stopServer(serverId) {
+    if (!confirm('确定要停止服务器吗？')) return;
+    fetch(`/servers/${serverId}/stop/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('停止失败：' + data.message);
+        }
+    });
+}
+
+function restartServer(serverId) {
+    if (!confirm('确定要重启服务器吗？')) return;
+    fetch(`/servers/${serverId}/restart/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('重启失败：' + data.message);
+        }
+    });
+}
+
+function deleteServer(serverId) {
+    if (!confirm('确定要删除此服务器吗？此操作不可恢复！')) return;
+    fetch(`/servers/${serverId}/delete/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('删除失败：' + data.message);
+        }
+    });
+}
+
+// 添加服务器表单处理
+function submitAddServer() {
+    const form = document.getElementById('addServerForm');
+    const formData = new FormData(form);
+    
+    fetch('/servers/add/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            alert('添加失败：' + data.message);
+        }
+    });
+}
+
+// 认证字段显示控制
+document.querySelector('input[name="allow_anonymous"]').addEventListener('change', function() {
+    const authFields = document.querySelector('.auth-fields');
+    authFields.classList.toggle('d-none', this.checked);
+});
+
+// CSRF Token获取函数
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %} 
